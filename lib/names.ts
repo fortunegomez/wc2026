@@ -21,6 +21,7 @@ const API_NAME_MAP: Record<string, string> = {
   'Bosnia and Herzegovina': 'Bosnia & Herzegovina',
   'Bosnia-Herzegovina': 'Bosnia & Herzegovina',
   'Cabo Verde': 'Cape Verde',
+  'Cape Verde Islands': 'Cape Verde',
   'IR Iran': 'Iran',
 };
 
