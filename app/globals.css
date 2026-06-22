@@ -53,6 +53,12 @@ a {
   background: linear-gradient(180deg, var(--panel), var(--ink-2));
   padding: 8px;
   margin-bottom: 18px;
+  /* Stay pinned to the top so the tabs are always reachable while scrolling.
+     z-index sits below the popup overlay (50) so popups still cover it. */
+  position: sticky;
+  top: 0;
+  z-index: 40;
+  box-shadow: 0 8px 24px rgba(4, 6, 12, 0.45);
 }
 .nav .brand {
   font-family: 'Anton';
@@ -490,6 +496,308 @@ footer {
   letter-spacing: 1px;
 }
 
+/* ---------- Fixtures sections & clickable rows ---------- */
+.section-head {
+  font-family: 'Anton';
+  font-weight: 400;
+  font-size: 20px;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  margin: 26px 0 2px;
+  color: var(--text);
+}
+.fx-section:first-child .section-head {
+  margin-top: 4px;
+}
+.clickable {
+  cursor: pointer;
+}
+.row.clickable:focus-visible,
+.match.clickable:focus-visible {
+  outline: 2px solid var(--accent-2);
+  outline-offset: 2px;
+}
+.match.clickable:hover {
+  border-color: var(--accent-2);
+  background: var(--panel-2);
+}
+.taphint {
+  font-family: 'IBM Plex Mono';
+  font-size: 10px;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  color: var(--muted);
+  text-align: center;
+  margin-top: 12px;
+}
+
+/* ---------- Popup (modal on desktop, bottom sheet on mobile) ---------- */
+.pop-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  background: rgba(4, 6, 12, 0.66);
+  backdrop-filter: blur(3px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  animation: popfade 0.18s ease;
+}
+@keyframes popfade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@keyframes popscale {
+  from {
+    transform: translateY(10px) scale(0.98);
+    opacity: 0;
+  }
+  to {
+    transform: none;
+    opacity: 1;
+  }
+}
+@keyframes popslide {
+  from {
+    transform: translateY(100%);
+  }
+  to {
+    transform: none;
+  }
+}
+.pop-panel {
+  width: 100%;
+  max-width: 460px;
+  max-height: 85vh;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: linear-gradient(180deg, var(--panel), var(--ink-2));
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.55);
+  animation: popscale 0.2s cubic-bezier(0.2, 0.8, 0.2, 1);
+  overflow: hidden;
+}
+.pop-gripzone {
+  display: none;
+}
+.pop-grip {
+  width: 38px;
+  height: 4px;
+  border-radius: 3px;
+  background: var(--line);
+  margin: 8px auto 0;
+}
+.pop-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 16px 18px 12px;
+  border-bottom: 1px solid var(--line);
+}
+.pop-title {
+  font-weight: 700;
+  font-size: 16px;
+  min-width: 0;
+}
+.pop-teamtitle,
+.pop-fixturetitle {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+.pop-fixturetitle {
+  font-family: 'Anton';
+  font-weight: 400;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  font-size: 17px;
+}
+.pop-vs {
+  color: var(--muted);
+}
+.pop-close {
+  flex: none;
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: var(--ink-2);
+  color: var(--muted);
+  font-size: 20px;
+  line-height: 1;
+  cursor: pointer;
+}
+.pop-close:hover {
+  color: var(--text);
+  border-color: var(--accent);
+}
+.pop-body {
+  padding: 16px 18px 20px;
+  overflow-y: auto;
+}
+.pop-stats {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 8px;
+}
+.pop-stat {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--ink-2);
+  padding: 9px 11px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.pop-stat .k {
+  font-family: 'IBM Plex Mono';
+  font-size: 9px;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.pop-stat .v {
+  font-family: 'IBM Plex Mono';
+  font-size: 17px;
+  font-weight: 600;
+}
+.pop-section {
+  margin-top: 18px;
+}
+.pop-label {
+  font-family: 'IBM Plex Mono';
+  font-size: 10px;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  color: var(--accent-2);
+  margin-bottom: 8px;
+}
+.pop-empty {
+  color: var(--muted);
+  font-size: 13px;
+}
+.pop-matches {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.pop-match {
+  display: grid;
+  grid-template-columns: 52px 1fr auto;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 9px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--ink-2);
+}
+.pm-when {
+  font-family: 'IBM Plex Mono';
+  font-size: 10px;
+  color: var(--muted);
+}
+.pm-opp {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  font-size: 13px;
+}
+.pm-ha {
+  color: var(--muted);
+  font-family: 'IBM Plex Mono';
+  font-size: 11px;
+}
+.pm-name {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.pm-res {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-family: 'IBM Plex Mono';
+  font-size: 13px;
+}
+.pm-time {
+  color: var(--muted);
+}
+.pm-badge {
+  font-family: 'IBM Plex Mono';
+  font-size: 9px;
+  font-weight: 600;
+  padding: 1px 5px;
+  border-radius: 5px;
+  letter-spacing: 0.5px;
+}
+.pm-badge.W {
+  background: rgba(19, 224, 196, 0.16);
+  color: var(--accent-2);
+}
+.pm-badge.L {
+  background: rgba(255, 59, 107, 0.16);
+  color: var(--accent);
+}
+.pm-badge.D {
+  background: var(--panel-2);
+  color: var(--muted);
+}
+.pm-badge.live {
+  background: rgba(255, 59, 107, 0.16);
+  color: var(--accent);
+}
+.pop-score {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  gap: 10px;
+}
+.ps-team {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 7px;
+  text-align: center;
+  font-weight: 600;
+  font-size: 14px;
+}
+.ps-team .flag {
+  width: 44px;
+  height: 30px;
+}
+.ps-mid {
+  text-align: center;
+  min-width: 84px;
+}
+.ps-num {
+  font-family: 'IBM Plex Mono';
+  font-size: 30px;
+  font-weight: 600;
+}
+.ps-time {
+  font-family: 'IBM Plex Mono';
+  font-size: 20px;
+  color: var(--muted);
+}
+.pop-metarow {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 14px;
+  font-family: 'IBM Plex Mono';
+  font-size: 11px;
+  color: var(--muted);
+}
+
 /* ---------- Mobile ---------- */
 @media (max-width: 720px) {
   .groupgrid {
@@ -505,5 +813,20 @@ footer {
     width: 100%;
     margin-right: 0;
     margin-bottom: 2px;
+  }
+  .pop-overlay {
+    padding: 0;
+    align-items: flex-end;
+  }
+  .pop-panel {
+    max-width: none;
+    max-height: 90vh;
+    border-radius: 18px 18px 0 0;
+    animation: popslide 0.24s cubic-bezier(0.2, 0.8, 0.2, 1);
+  }
+  .pop-gripzone {
+    display: block;
+    padding-bottom: 2px;
+    touch-action: none;
   }
 }

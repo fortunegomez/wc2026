@@ -1,11 +1,11 @@
 import { getBoard } from '@/lib/engine';
 import { SiteHeader } from '@/components/SiteHeader';
-import { Flag } from '@/components/Flag';
+import { RaceBoard } from '@/components/RaceBoard';
 
 export const revalidate = 300;
 
 export default async function Home() {
-  const { board, started, hasToken } = await getBoard();
+  const { board, teamDetails, started, hasToken } = await getBoard();
   const max = board[0]?.pct ?? 1;
   const phase = !hasToken
     ? 'Preview · seed ratings'
@@ -32,35 +32,8 @@ export default async function Home() {
           <span>The board</span>
           <span>{phase}</span>
         </h2>
-        <div>
-          {board.map((t) => (
-            <div className={`row${t.rank === 1 ? ' top1' : ''}`} key={t.name}>
-              <div className="rank">{t.rank}</div>
-              <Flag cc={t.cc} alt={t.name} />
-              <div>
-                <div className="name">
-                  {t.name}
-                  {t.delta > 0 && <span className="delta up">▲{t.delta}</span>}
-                  {t.delta < 0 && (
-                    <span className="delta down">▼{-t.delta}</span>
-                  )}
-                </div>
-                <div className="meta">
-                  {t.conf} · rating {Math.round(t.rating)}
-                </div>
-              </div>
-              <div className="pctwrap">
-                <div className="pct">{t.pct.toFixed(1)}%</div>
-                <div className="barback">
-                  <div
-                    className="barfill"
-                    style={{ width: `${((t.pct / max) * 100).toFixed(1)}%` }}
-                  />
-                </div>
-              </div>
-            </div>
-          ))}
-        </div>
+        <RaceBoard board={board} details={teamDetails} max={max} />
+        <div className="taphint">Tap any team for its group &amp; results</div>
       </div>
 
       {!hasToken && (
