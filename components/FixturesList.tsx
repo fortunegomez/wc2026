@@ -38,13 +38,28 @@ export function FixturesList({
     finishedDays.length > 0 ? finishedDays[finishedDays.length - 1].date : null;
 
   useIsoEffect(() => {
-    const el = anchorRef.current;
-    if (!el) return;
-    // Land the latest-results day just below the sticky nav.
-    const nav = document.querySelector('.nav');
-    const navH = nav ? nav.getBoundingClientRect().height : 0;
-    const y = el.getBoundingClientRect().top + window.scrollY - navH - 14;
-    window.scrollTo({ top: Math.max(0, y), behavior: 'auto' });
+    if (!anchorRef.current) return;
+    // Land the latest-results day just below the sticky nav. We scroll
+    // immediately and again on the next two frames, because Next.js can reset
+    // scroll to the top after a client-side navigation — the deferred passes
+    // win that race.
+    const doScroll = () => {
+      const el = anchorRef.current;
+      if (!el) return;
+      const nav = document.querySelector('.nav');
+      const navH = nav ? nav.getBoundingClientRect().height : 0;
+      const y = el.getBoundingClientRect().top + window.scrollY - navH - 14;
+      window.scrollTo({ top: Math.max(0, y), behavior: 'auto' });
+    };
+    let raf2 = 0;
+    doScroll();
+    const raf1 = requestAnimationFrame(() => {
+      raf2 = requestAnimationFrame(doScroll);
+    });
+    return () => {
+      cancelAnimationFrame(raf1);
+      cancelAnimationFrame(raf2);
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
