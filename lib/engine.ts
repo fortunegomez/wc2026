@@ -86,6 +86,8 @@ export interface BoardTeam extends SeedTeam {
   rank: number;
   seedRank: number;
   delta: number; // seedRank - rank; positive = climbed since seeding
+  eliminated: boolean;
+  eliminatedAt: string | null; // utcDate of the knockout match it lost
 }
 
 export interface BoardResult {
@@ -96,6 +98,8 @@ export interface BoardResult {
   kickoff: string | null;
   hasToken: boolean;
   hasData: boolean;
+  knockoutActive: boolean; // are we in the knockout rounds?
+  aliveCount: number; // how many teams are still in
 }
 
 // A single match from one team's point of view (used in the team popup).
@@ -187,6 +191,69 @@ function buildTeamMatches(matches: ApiMatch[]): Record<string, TeamMatch[]> {
   return out;
 }
 
+// ---------- knockout elimination ----------
+
+const KNOCKOUT_STAGES = new Set([
+  'LAST_32',
+  'LAST_16',
+  'QUARTER_FINALS',
+  'SEMI_FINALS',
+  'THIRD_PLACE',
+  'FINAL',
+]);
+
+function isKnockout(m: ApiMatch): boolean {
+  return KNOCKOUT_STAGES.has(m.stage);
+}
+
+// The losing side of a finished knockout match. Uses score.winner (which
+// reflects penalty-shootout results), falling back to the full-time score.
+// Returns null when the result can't decide a loser yet.
+function knockoutLoser(
+  m: ApiMatch,
+  home: SeedTeam | null,
+  away: SeedTeam | null,
+): SeedTeam | null {
+  const w = m.score.winner;
+  if (w === 'HOME_TEAM') return away;
+  if (w === 'AWAY_TEAM') return home;
+  const h = m.score.fullTime.home;
+  const a = m.score.fullTime.away;
+  if (h != null && a != null && h !== a) return h > a ? away : home;
+  return null;
+}
+
+interface KnockoutStatus {
+  inBracket: Set<string>; // teams that reached the knockout rounds
+  eliminated: Set<string>; // teams that lost a knockout match
+  eliminatedAt: Map<string, string>; // utcDate of the match each lost
+  active: boolean; // have the knockouts started at all?
+}
+
+// Works out who is still in purely from the knockout fixtures: a team is out
+// the moment it loses a knockout match; everyone in the bracket who hasn't lost
+// is still in. (No group-stage logic — once the bracket exists, any team that
+// isn't in it didn't qualify and is treated as out by the caller.)
+function knockoutStatus(matches: ApiMatch[]): KnockoutStatus {
+  const inBracket = new Set<string>();
+  const eliminated = new Set<string>();
+  const eliminatedAt = new Map<string, string>();
+  for (const m of matches) {
+    if (!isKnockout(m)) continue;
+    const home = resolveTeam(m.homeTeam.name);
+    const away = resolveTeam(m.awayTeam.name);
+    if (home) inBracket.add(home.name);
+    if (away) inBracket.add(away.name);
+    if (!isFinished(m)) continue;
+    const loser = knockoutLoser(m, home, away);
+    if (loser) {
+      eliminated.add(loser.name);
+      eliminatedAt.set(loser.name, m.utcDate);
+    }
+  }
+  return { inBracket, eliminated, eliminatedAt, active: inBracket.size > 0 };
+}
+
 export async function getBoard(): Promise<BoardResult> {
   const [matchData, standingData] = await Promise.all([
     getMatches(),
@@ -196,6 +263,12 @@ export async function getBoard(): Promise<BoardResult> {
   const standings = standingData?.standings ?? [];
   const ratings = replayRatings(matches);
   const seedRanks = seedRankMap();
+  const ko = knockoutStatus(matches);
+
+  // A team is out if it lost a knockout match, or — once the bracket exists —
+  // it never made the bracket (didn't qualify from its group).
+  const isEliminated = (name: string): boolean =>
+    ko.eliminated.has(name) || (ko.active && !ko.inBracket.has(name));
 
   const rated = SEED.map((t) => ({
     ...t,
@@ -203,11 +276,38 @@ export async function getBoard(): Promise<BoardResult> {
     rating: ratings.get(t.name) ?? t.rating,
   }));
 
-  const ranked = titleOdds(rated).sort((a, b) => b.pct - a.pct);
-  const board: BoardTeam[] = ranked.map((t, i) => {
+  // Title odds are recomputed over the survivors only, so their percentages
+  // always sum to 100%. Eliminated teams get 0%.
+  const aliveRanked = titleOdds(rated.filter((t) => !isEliminated(t.name))).sort(
+    (a, b) => b.pct - a.pct,
+  );
+
+  // Eliminated below the line: most recently knocked out first, then the
+  // group-stage non-qualifiers (no knockout date) by rating.
+  const elimRanked = rated
+    .filter((t) => isEliminated(t.name))
+    .map((t) => ({ ...t, pct: 0 }))
+    .sort((a, b) => {
+      const ea = ko.eliminatedAt.get(a.name);
+      const eb = ko.eliminatedAt.get(b.name);
+      if (ea && eb) return eb.localeCompare(ea);
+      if (ea) return -1;
+      if (eb) return 1;
+      return b.rating - a.rating;
+    });
+
+  const ordered = [...aliveRanked, ...elimRanked];
+  const board: BoardTeam[] = ordered.map((t, i) => {
     const rank = i + 1;
     const seedRank = seedRanks.get(t.name) ?? rank;
-    return { ...t, rank, seedRank, delta: seedRank - rank };
+    return {
+      ...t,
+      rank,
+      seedRank,
+      delta: seedRank - rank,
+      eliminated: isEliminated(t.name),
+      eliminatedAt: ko.eliminatedAt.get(t.name) ?? null,
+    };
   });
 
   const { standingsByGroup, teamGroup } = buildGroupViews(
@@ -234,6 +334,8 @@ export async function getBoard(): Promise<BoardResult> {
     kickoff: firstKickoff(matches),
     hasToken: hasToken(),
     hasData: matchData !== null,
+    knockoutActive: ko.active,
+    aliveCount: aliveRanked.length,
   };
 }
 

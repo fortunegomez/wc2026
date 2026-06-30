@@ -5,13 +5,16 @@ import { RaceBoard } from '@/components/RaceBoard';
 export const revalidate = 300;
 
 export default async function Home() {
-  const { board, teamDetails, started, hasToken } = await getBoard();
-  const max = board[0]?.pct ?? 1;
+  const { board, teamDetails, started, hasToken, knockoutActive, aliveCount } =
+    await getBoard();
+  const max = board.find((t) => !t.eliminated)?.pct || 1;
   const phase = !hasToken
     ? 'Preview · seed ratings'
-    : started
-      ? 'Updating live'
-      : 'Pre-tournament';
+    : knockoutActive
+      ? `${aliveCount} still in`
+      : started
+        ? 'Updating live'
+        : 'Pre-tournament';
 
   return (
     <>
@@ -50,9 +53,11 @@ export default async function Home() {
         Ratings become a title chance across all 48 teams, so the percentages
         add up to 100%. After every finished match both teams&apos; ratings
         shift using the Elo formula FIFA uses (a bigger winning margin moves them
-        more), then every percentage is recalculated. ▲▼ shows movement since
-        the pre-tournament seeding. It gives odds, never certainty — football
-        stays unpredictable.
+        more), then every percentage is recalculated. In the knockout rounds a
+        team is out the moment it loses — eliminated teams drop to 0% and the
+        chances are shared among those still in. ▲▼ shows movement since the
+        pre-tournament seeding. It gives odds, never certainty — football stays
+        unpredictable.
       </div>
     </>
   );

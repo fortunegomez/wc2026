@@ -496,6 +496,57 @@ footer {
   letter-spacing: 1px;
 }
 
+/* ---------- THE RACE: eliminated teams ---------- */
+.outline {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 18px 4px 8px;
+}
+.outline span {
+  font-family: 'IBM Plex Mono';
+  font-size: 10px;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  color: var(--muted);
+  white-space: nowrap;
+}
+.outline::after {
+  content: '';
+  height: 1px;
+  background: var(--line);
+  flex: 1;
+}
+.row.out {
+  opacity: 0.5;
+}
+.row.out:hover {
+  opacity: 0.8;
+}
+.row.out .name {
+  color: var(--muted);
+}
+.pct.out {
+  font-family: 'IBM Plex Mono';
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.pop-out {
+  margin-bottom: 14px;
+  padding: 9px 12px;
+  border: 1px solid rgba(255, 59, 107, 0.4);
+  background: rgba(255, 59, 107, 0.08);
+  border-radius: 10px;
+  color: var(--accent);
+  font-family: 'IBM Plex Mono';
+  font-size: 11px;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+}
+
 /* ---------- Fixtures sections & clickable rows ---------- */
 .section-head {
   font-family: 'Anton';
