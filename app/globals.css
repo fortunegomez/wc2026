@@ -333,6 +333,18 @@ h1.title .em {
 .tag.ft {
   color: var(--accent-2);
 }
+.pen {
+  font-family: 'IBM Plex Mono';
+  font-size: 10px;
+  letter-spacing: 0.5px;
+  color: var(--gold);
+  margin-top: 2px;
+}
+.pm-pen {
+  font-family: 'IBM Plex Mono';
+  font-size: 10px;
+  color: var(--gold);
+}
 
 /* ---------- Groups ---------- */
 .groupgrid {

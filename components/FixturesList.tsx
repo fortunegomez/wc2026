@@ -104,6 +104,11 @@ export function FixturesList({
                     ) : (
                       <div className="vs">{m.time}</div>
                     )}
+                    {m.shootout && (
+                      <div className="pen">
+                        {m.pen ? `PEN ${m.pen.home}:${m.pen.away}` : 'PEN'}
+                      </div>
+                    )}
                     <div
                       className={`tag${
                         m.live ? ' live' : m.finished ? ' ft' : ''
@@ -168,6 +173,11 @@ function GameCard({
             </div>
           ) : (
             <div className="ps-time">{m.time}</div>
+          )}
+          {m.shootout && (
+            <div className="pen">
+              {m.pen ? `PEN ${m.pen.home}:${m.pen.away}` : 'PEN'}
+            </div>
           )}
           <div
             className={`tag${m.live ? ' live' : m.finished ? ' ft' : ''}`}

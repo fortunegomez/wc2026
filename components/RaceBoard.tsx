@@ -182,6 +182,13 @@ function TeamCard({ team, detail }: { team: BoardTeam; detail: TeamDetail }) {
                       <b>
                         {m.scoreFor}–{m.scoreAgainst}
                       </b>
+                      {m.shootout && (
+                        <span className="pm-pen">
+                          {m.penFor != null && m.penAgainst != null
+                            ? `PEN ${m.penFor}:${m.penAgainst}`
+                            : 'PEN'}
+                        </span>
+                      )}
                       {m.live && <span className="pm-badge live">LIVE</span>}
                       {m.result && (
                         <span className={`pm-badge ${m.result}`}>{m.result}</span>

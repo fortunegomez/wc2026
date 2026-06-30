@@ -28,6 +28,54 @@ function isFinished(m: ApiMatch): boolean {
   );
 }
 
+interface MatchScore {
+  home: number | null; // main line: end of normal + extra time
+  away: number | null;
+  shootout: boolean;
+  pen: { home: number; away: number } | null;
+}
+
+// Resolves the score we actually use. For a penalty shootout the "main line" is
+// the score at the end of normal + extra time (a draw) — NOT football-data's
+// full-time figure, which folds the shootout in (e.g. a 1-1 that went 3-4 on
+// pens is reported as fullTime 4-5). The shootout is returned separately so the
+// UI can show it as (PEN x:y) and the Elo update can treat the tie as level.
+function matchScore(m: ApiMatch): MatchScore {
+  const s = m.score;
+  const hasPens =
+    !!s.penalties && s.penalties.home != null && s.penalties.away != null;
+  const shootout = s.duration === 'PENALTY_SHOOTOUT' || hasPens;
+  if (!shootout) {
+    return {
+      home: s.fullTime.home,
+      away: s.fullTime.away,
+      shootout: false,
+      pen: null,
+    };
+  }
+  const pen = hasPens
+    ? { home: s.penalties!.home as number, away: s.penalties!.away as number }
+    : null;
+  let home: number | null;
+  let away: number | null;
+  if (
+    s.regularTime &&
+    s.regularTime.home != null &&
+    s.regularTime.away != null
+  ) {
+    home = s.regularTime.home + (s.extraTime?.home ?? 0);
+    away = s.regularTime.away + (s.extraTime?.away ?? 0);
+  } else if (pen && s.fullTime.home != null && s.fullTime.away != null) {
+    // No regular-time breakdown: back out the shootout from full-time.
+    home = s.fullTime.home - pen.home;
+    away = s.fullTime.away - pen.away;
+  } else {
+    home = s.fullTime.home;
+    away = s.fullTime.away;
+  }
+  return { home, away, shootout: true, pen };
+}
+
 function seedRankMap(): Map<string, number> {
   const sorted = [...SEED].sort((a, b) => b.rating - a.rating);
   const m = new Map<string, number>();
@@ -48,15 +96,13 @@ function replayRatings(matches: ApiMatch[]): Map<string, number> {
     const ra = ratings.get(home.name);
     const rb = ratings.get(away.name);
     if (ra === undefined || rb === undefined) continue;
+    // Use the main line, so a shootout counts as the level match it was; the
+    // winner still advances via the knockout logic, not via Elo.
+    const sc = matchScore(m);
+    if (sc.home === null || sc.away === null) continue;
     const a = { rating: ra };
     const b = { rating: rb };
-    applyElo(
-      a,
-      b,
-      m.score.fullTime.home as number,
-      m.score.fullTime.away as number,
-      kForStage(m.stage),
-    );
+    applyElo(a, b, sc.home, sc.away, kForStage(m.stage));
     ratings.set(home.name, a.rating);
     ratings.set(away.name, b.rating);
   }
@@ -109,8 +155,11 @@ export interface TeamMatch {
   home: boolean;
   finished: boolean;
   live: boolean;
-  scoreFor: number | null;
+  scoreFor: number | null; // main line (end of normal + extra time)
   scoreAgainst: number | null;
+  shootout: boolean;
+  penFor: number | null;
+  penAgainst: number | null;
   result: 'W' | 'D' | 'L' | null;
   time: string;
   dateLabel: string;
@@ -149,12 +198,27 @@ function buildTeamMatches(matches: ApiMatch[]): Record<string, TeamMatch[]> {
     const away = resolveTeam(m.awayTeam.name);
     const fin = isFinished(m);
     const live = ['IN_PLAY', 'PAUSED'].includes(m.status);
-    const hg = m.score.fullTime.home;
-    const ag = m.score.fullTime.away;
+    const sc = matchScore(m);
+    const hg = sc.home;
+    const ag = sc.away;
+    const penH = sc.pen?.home ?? null;
+    const penA = sc.pen?.away ?? null;
     const stageLabel = STAGE_LABELS[m.stage] ?? m.stage;
     const groupLabel = m.stage === 'GROUP_STAGE' ? groupKey(m.group) : null;
     const time = timeFmt.format(d);
     const dateLabel = shortDayFmt.format(d);
+    // A shootout's main line is a draw, so W/L comes from the shootout itself.
+    const koResult = (
+      forPen: number | null,
+      againstPen: number | null,
+      forGoals: number | null,
+      againstGoals: number | null,
+    ): 'W' | 'D' | 'L' | null => {
+      if (sc.shootout && forPen != null && againstPen != null) {
+        return forPen > againstPen ? 'W' : 'L';
+      }
+      return resultOf(forGoals, againstGoals, fin);
+    };
     if (home) {
       add(home.name, {
         opponent: away?.name ?? m.awayTeam.name ?? 'TBD',
@@ -164,7 +228,10 @@ function buildTeamMatches(matches: ApiMatch[]): Record<string, TeamMatch[]> {
         live,
         scoreFor: hg,
         scoreAgainst: ag,
-        result: resultOf(hg, ag, fin),
+        shootout: sc.shootout,
+        penFor: penH,
+        penAgainst: penA,
+        result: koResult(penH, penA, hg, ag),
         time,
         dateLabel,
         stageLabel,
@@ -180,7 +247,10 @@ function buildTeamMatches(matches: ApiMatch[]): Record<string, TeamMatch[]> {
         live,
         scoreFor: ag,
         scoreAgainst: hg,
-        result: resultOf(ag, hg, fin),
+        shootout: sc.shootout,
+        penFor: penA,
+        penAgainst: penH,
+        result: koResult(penA, penH, ag, hg),
         time,
         dateLabel,
         stageLabel,
@@ -525,8 +595,10 @@ export interface FixtureMatch {
   groupLabel: string | null;
   home: FixtureTeam;
   away: FixtureTeam;
-  homeGoals: number | null;
+  homeGoals: number | null; // main line (end of normal + extra time)
   awayGoals: number | null;
+  shootout: boolean;
+  pen: { home: number; away: number } | null;
 }
 
 export interface FixtureDay {
@@ -654,6 +726,7 @@ export async function getFixtures(): Promise<FixturesResult> {
     if (Number.isNaN(d.getTime())) continue;
     const dateKey = lagosDateKey(d);
     const fin = isFinished(m);
+    const sc = matchScore(m);
     const fixture: FixtureMatch = {
       id: m.id,
       time: timeFmt.format(d),
@@ -665,8 +738,10 @@ export async function getFixtures(): Promise<FixturesResult> {
       groupLabel: m.stage === 'GROUP_STAGE' ? groupKey(m.group) : null,
       home: teamCell(m.homeTeam),
       away: teamCell(m.awayTeam),
-      homeGoals: m.score.fullTime.home,
-      awayGoals: m.score.fullTime.away,
+      homeGoals: sc.home,
+      awayGoals: sc.away,
+      shootout: sc.shootout,
+      pen: sc.pen,
     };
     const entry: Entry = { dateKey, sortKey: m.utcDate, match: fixture };
     if (fin) finished.push(entry);
