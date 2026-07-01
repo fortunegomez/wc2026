@@ -453,6 +453,171 @@ h1.title .em {
   letter-spacing: 1px;
 }
 
+/* ---------- Tournament bracket ---------- */
+.brsel {
+  display: none; /* mobile only */
+}
+.bracket {
+  display: flex;
+  gap: 22px;
+  align-items: stretch;
+  overflow-x: auto;
+  padding-bottom: 8px;
+}
+.bround {
+  flex: 0 0 auto;
+  min-width: 200px;
+  display: flex;
+  flex-direction: column;
+}
+.brhead {
+  font-family: 'IBM Plex Mono';
+  font-size: 11px;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  color: var(--accent-2);
+  margin-bottom: 12px;
+  text-align: center;
+}
+.brmatches {
+  display: flex;
+  flex-direction: column;
+  justify-content: center; /* centres shorter rounds → bracket silhouette */
+  gap: 12px;
+  flex: 1;
+}
+.bmatch {
+  position: relative;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--ink-2);
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+/* short connector stub pointing to the next round */
+.bmatch:not(.last)::after {
+  content: '';
+  position: absolute;
+  right: -22px;
+  top: 50%;
+  width: 22px;
+  height: 1px;
+  background: var(--line);
+}
+.bteam {
+  display: grid;
+  grid-template-columns: 22px 1fr auto;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 6px;
+  border-radius: 7px;
+}
+.bteam .flag {
+  width: 22px;
+  height: 15px;
+}
+.bteam .flag.ph {
+  opacity: 0.3;
+}
+.bname {
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.bname.tbd {
+  color: var(--muted);
+  font-weight: 500;
+  font-style: italic;
+  font-size: 12px;
+}
+.bscore {
+  font-family: 'IBM Plex Mono';
+  font-size: 14px;
+  color: var(--muted);
+}
+.bteam.win {
+  background: rgba(19, 224, 196, 0.1);
+}
+.bteam.win .bname {
+  color: var(--text);
+}
+.bteam.win .bscore {
+  color: var(--accent-2);
+  font-weight: 600;
+}
+.bteam.lose {
+  opacity: 0.5;
+}
+.bpen {
+  font-family: 'IBM Plex Mono';
+  font-size: 9px;
+  letter-spacing: 0.5px;
+  color: var(--gold);
+  text-align: center;
+}
+.bwhen {
+  font-family: 'IBM Plex Mono';
+  font-size: 9px;
+  color: var(--muted);
+  text-align: center;
+}
+.bthird {
+  margin-top: 20px;
+  max-width: 240px;
+}
+
+@media (max-width: 720px) {
+  .brsel {
+    display: flex;
+    gap: 6px;
+    margin-bottom: 16px;
+  }
+  .brsel-btn {
+    flex: 1;
+    min-width: 0;
+    font-family: 'IBM Plex Mono';
+    font-size: 11px;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    color: var(--muted);
+    background: var(--ink-2);
+    border: 1px solid var(--line);
+    border-radius: 9px;
+    padding: 9px 4px;
+    cursor: pointer;
+  }
+  .brsel-btn.active {
+    color: var(--accent-2);
+    border-color: var(--accent-2);
+    background: rgba(19, 224, 196, 0.08);
+  }
+  .bracket {
+    display: block;
+    overflow: visible;
+  }
+  .bround {
+    display: none;
+    min-width: 0;
+    width: 100%;
+  }
+  .bround.sel {
+    display: flex;
+  }
+  .brmatches {
+    justify-content: flex-start;
+  }
+  .bmatch:not(.last)::after {
+    display: none;
+  }
+  .bthird {
+    max-width: none;
+  }
+}
+
 /* ---------- Empty / friendly states ---------- */
 .empty {
   text-align: center;

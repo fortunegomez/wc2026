@@ -841,3 +841,110 @@ export function kickoffLabel(kickoff: string | null): string {
   if (Number.isNaN(d.getTime())) return 'June 11, 2026';
   return friendlyFmt.format(d);
 }
+
+// ---------- TOURNAMENT BRACKET ----------
+
+const BRACKET_ROUNDS = [
+  { key: 'LAST_32', label: 'Round of 32', short: 'R32' },
+  { key: 'LAST_16', label: 'Round of 16', short: 'R16' },
+  { key: 'QUARTER_FINALS', label: 'Quarter-finals', short: 'QF' },
+  { key: 'SEMI_FINALS', label: 'Semi-finals', short: 'SF' },
+  { key: 'FINAL', label: 'Final', short: 'Final' },
+];
+
+export interface BracketTeam {
+  name: string | null; // null until the feeding round decides it
+  cc: string | null;
+  crest: string | null;
+}
+
+export interface BracketMatch {
+  id: number;
+  home: BracketTeam;
+  away: BracketTeam;
+  homeScore: number | null; // main line (end of normal + extra time)
+  awayScore: number | null;
+  shootout: boolean;
+  pen: { home: number; away: number } | null;
+  winner: 'home' | 'away' | null; // who advances
+  played: boolean;
+  dateLabel: string;
+  time: string;
+}
+
+export interface BracketRound {
+  key: string;
+  label: string;
+  short: string;
+  matches: BracketMatch[];
+}
+
+export interface BracketResult {
+  rounds: BracketRound[]; // R32 → Final, left-to-right
+  thirdPlace: BracketMatch | null;
+  hasKnockouts: boolean;
+  hasToken: boolean;
+  kickoff: string | null;
+}
+
+function bracketTeam(ref: ApiTeamRef | null | undefined): BracketTeam {
+  if (!ref || !ref.name) return { name: null, cc: null, crest: null };
+  const seed = resolveTeam(ref.name);
+  return {
+    name: seed?.name ?? ref.name,
+    cc: seed?.cc ?? null,
+    crest: ref.crest ?? null,
+  };
+}
+
+function toBracketMatch(m: ApiMatch): BracketMatch {
+  const d = new Date(m.utcDate);
+  const valid = !Number.isNaN(d.getTime());
+  const sc = matchScore(m);
+  const played = isFinished(m);
+  const winner =
+    m.score.winner === 'HOME_TEAM'
+      ? 'home'
+      : m.score.winner === 'AWAY_TEAM'
+        ? 'away'
+        : null;
+  return {
+    id: m.id,
+    home: bracketTeam(m.homeTeam),
+    away: bracketTeam(m.awayTeam),
+    homeScore: played ? sc.home : null,
+    awayScore: played ? sc.away : null,
+    shootout: sc.shootout,
+    pen: sc.pen,
+    winner,
+    played,
+    dateLabel: valid ? shortDayFmt.format(d) : '',
+    time: valid ? timeFmt.format(d) : '',
+  };
+}
+
+export async function getBracket(): Promise<BracketResult> {
+  const data = await getMatches();
+  const matches = data?.matches ?? [];
+  const forStage = (key: string) =>
+    matches
+      .filter((m) => m.stage === key)
+      .sort((a, b) => a.utcDate.localeCompare(b.utcDate))
+      .map(toBracketMatch);
+
+  const rounds: BracketRound[] = BRACKET_ROUNDS.map((r) => ({
+    ...r,
+    matches: forStage(r.key),
+  })).filter((r) => r.matches.length > 0);
+
+  const thirdPlace = forStage('THIRD_PLACE')[0] ?? null;
+  const hasKnockouts = rounds.length > 0 || thirdPlace !== null;
+
+  return {
+    rounds,
+    thirdPlace,
+    hasKnockouts,
+    hasToken: hasToken(),
+    kickoff: firstKickoff(matches),
+  };
+}

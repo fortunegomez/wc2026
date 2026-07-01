@@ -9,6 +9,7 @@ const TABS = [
   // jumps to the latest results) instead of Next resetting to the top.
   { href: '/fixtures', label: 'Fixtures & Results', scroll: false },
   { href: '/groups', label: 'Groups' },
+  { href: '/bracket', label: 'Bracket' },
   { href: '/scorers', label: 'Top Scorers' },
 ];
 
