@@ -191,6 +191,38 @@ function GameCard({
         </div>
       </div>
 
+      {m.goals && (m.goals.home.length > 0 || m.goals.away.length > 0) && (
+        <div className="pop-goals">
+          <ul className="pg-col">
+            {m.goals.home.map((g, i) => (
+              <li key={i}>
+                {g.name}
+                <span className="pg-min">
+                  {g.minute != null ? ` ${g.minute}'` : ''}
+                  {g.penalty ? ' (pen)' : ''}
+                  {g.owngoal ? ' (og)' : ''}
+                </span>
+              </li>
+            ))}
+          </ul>
+          <span className="pg-ball" aria-hidden="true">
+            ⚽
+          </span>
+          <ul className="pg-col right">
+            {m.goals.away.map((g, i) => (
+              <li key={i}>
+                {g.name}
+                <span className="pg-min">
+                  {g.minute != null ? ` ${g.minute}'` : ''}
+                  {g.penalty ? ' (pen)' : ''}
+                  {g.owngoal ? ' (og)' : ''}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
       <div className="pop-metarow">
         <span>
           {m.stageLabel}

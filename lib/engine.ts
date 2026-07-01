@@ -23,6 +23,7 @@ import {
   type SkeletonMatch,
   type Round,
 } from './bracketSkeleton';
+import { getOpenFootballMatches, type OFGoal } from './openFootball';
 
 const UPCOMING_STATUSES = ['SCHEDULED', 'TIMED'];
 
@@ -607,6 +608,15 @@ export interface FixtureMatch {
   awayGoals: number | null;
   shootout: boolean;
   pen: { home: number; away: number } | null;
+  goals: { home: Goal[]; away: Goal[] } | null; // scorers (OpenFootball), if any
+}
+
+// A goal scorer for the match popup.
+export interface Goal {
+  name: string;
+  minute: number | null;
+  penalty: boolean;
+  owngoal: boolean;
 }
 
 export interface FixtureDay {
@@ -711,10 +721,19 @@ function toDays(
   });
 }
 
+// Day distance between two YYYY-MM-DD dates (Infinity if unparseable).
+function dayDiff(a: string, b: string): number {
+  const da = Date.parse(`${a}T00:00:00Z`);
+  const db = Date.parse(`${b}T00:00:00Z`);
+  if (Number.isNaN(da) || Number.isNaN(db)) return Infinity;
+  return Math.round((da - db) / 86400000);
+}
+
 export async function getFixtures(): Promise<FixturesResult> {
-  const [matchData, standingData] = await Promise.all([
+  const [matchData, standingData, ofMatches] = await Promise.all([
     getMatches(),
     getStandings(),
+    getOpenFootballMatches(),
   ]);
   const matches = (matchData?.matches ?? [])
     .slice()
@@ -722,6 +741,56 @@ export async function getFixtures(): Promise<FixturesResult> {
   const standings = standingData?.standings ?? [];
   const ratings = replayRatings(matches);
   const { standingsByGroup } = buildGroupViews(matches, standings, ratings);
+
+  // Index OpenFootball entries by resolved team pair (unordered), so a fixture
+  // can find its scorers by teams + date. Name variants go through resolveTeam.
+  type OFEntry = { date: string; t1: string; t2: string; g1: OFGoal[]; g2: OFGoal[] };
+  const ofByPair = new Map<string, OFEntry[]>();
+  for (const om of ofMatches ?? []) {
+    const t1 = resolveTeam(om.team1)?.name;
+    const t2 = resolveTeam(om.team2)?.name;
+    if (!t1 || !t2) continue;
+    const key = [t1, t2].sort().join('|');
+    const list = ofByPair.get(key) ?? [];
+    list.push({ date: om.date ?? '', t1, t2, g1: om.goals1 ?? [], g2: om.goals2 ?? [] });
+    ofByPair.set(key, list);
+  }
+  const toGoal = (g: OFGoal): Goal => {
+    const min =
+      typeof g.minute === 'number' ? g.minute : parseInt(String(g.minute), 10);
+    return {
+      name: g.name ?? '',
+      minute: Number.isFinite(min) ? min : null,
+      penalty: !!g.penalty,
+      owngoal: !!g.owngoal,
+    };
+  };
+  const goalsFor = (
+    homeName: string | null,
+    awayName: string | null,
+    dateKey: string,
+  ): { home: Goal[]; away: Goal[] } | null => {
+    if (!homeName || !awayName) return null;
+    const candidates = ofByPair.get([homeName, awayName].sort().join('|'));
+    if (!candidates?.length) return null;
+    // Nearest date within a day (disambiguates group vs knockout rematches).
+    let best: OFEntry | null = null;
+    let bestDiff = Infinity;
+    for (const c of candidates) {
+      const diff = Math.abs(dayDiff(c.date, dateKey));
+      if (diff < bestDiff) {
+        bestDiff = diff;
+        best = c;
+      }
+    }
+    if (!best || bestDiff > 1) return null;
+    const homeIsT1 = best.t1 === homeName;
+    const sortByMin = (a: Goal, b: Goal) => (a.minute ?? 999) - (b.minute ?? 999);
+    const home = (homeIsT1 ? best.g1 : best.g2).map(toGoal).filter((g) => g.name).sort(sortByMin);
+    const away = (homeIsT1 ? best.g2 : best.g1).map(toGoal).filter((g) => g.name).sort(sortByMin);
+    if (!home.length && !away.length) return null;
+    return { home, away };
+  };
 
   const today = todayKey();
   type Entry = { dateKey: string; sortKey: string; match: FixtureMatch };
@@ -735,6 +804,8 @@ export async function getFixtures(): Promise<FixturesResult> {
     const dateKey = lagosDateKey(d);
     const fin = isFinished(m);
     const sc = matchScore(m);
+    const home = teamCell(m.homeTeam);
+    const away = teamCell(m.awayTeam);
     const fixture: FixtureMatch = {
       id: m.id,
       time: timeFmt.format(d),
@@ -744,12 +815,13 @@ export async function getFixtures(): Promise<FixturesResult> {
       live: ['IN_PLAY', 'PAUSED'].includes(m.status),
       stageLabel: STAGE_LABELS[m.stage] ?? m.stage,
       groupLabel: m.stage === 'GROUP_STAGE' ? groupKey(m.group) : null,
-      home: teamCell(m.homeTeam),
-      away: teamCell(m.awayTeam),
+      home,
+      away,
       homeGoals: sc.home,
       awayGoals: sc.away,
       shootout: sc.shootout,
       pen: sc.pen,
+      goals: fin ? goalsFor(home.name, away.name, m.utcDate.slice(0, 10)) : null,
     };
     const entry: Entry = { dateKey, sortKey: m.utcDate, match: fixture };
     if (fin) finished.push(entry);
