@@ -480,10 +480,12 @@ h1.title .em {
   text-align: center;
 }
 .brmatches {
+  /* space-around evenly distributes each round, so a child centres exactly
+     between its two feeders (matches are supplied in bracket order). */
   display: flex;
   flex-direction: column;
-  justify-content: center; /* centres shorter rounds → bracket silhouette */
-  gap: 12px;
+  justify-content: space-around;
+  gap: 6px;
   flex: 1;
 }
 .bmatch {
@@ -491,16 +493,37 @@ h1.title .em {
   border: 1px solid var(--line);
   border-radius: 10px;
   background: var(--ink-2);
-  padding: 6px;
+  padding: 14px 6px 6px;
   display: flex;
   flex-direction: column;
   gap: 3px;
 }
-/* short connector stub pointing to the next round */
+.bno {
+  position: absolute;
+  top: 3px;
+  left: 0;
+  right: 0;
+  text-align: center;
+  font-family: 'IBM Plex Mono';
+  font-size: 8px;
+  letter-spacing: 1px;
+  color: var(--muted);
+  opacity: 0.55;
+}
+/* connector stubs between rounds (fixed adjacency reads left-to-right) */
 .bmatch:not(.last)::after {
   content: '';
   position: absolute;
   right: -22px;
+  top: 50%;
+  width: 22px;
+  height: 1px;
+  background: var(--line);
+}
+.bround:not(:first-child) .bmatch::before {
+  content: '';
+  position: absolute;
+  left: -22px;
   top: 50%;
   width: 22px;
   height: 1px;
@@ -610,7 +633,8 @@ h1.title .em {
   .brmatches {
     justify-content: flex-start;
   }
-  .bmatch:not(.last)::after {
+  .bmatch:not(.last)::after,
+  .bround:not(:first-child) .bmatch::before {
     display: none;
   }
   .bthird {

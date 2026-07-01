@@ -1,13 +1,13 @@
 'use client';
 
-// The tournament bracket. On desktop it's a left-to-right set of round columns
-// (R32 → Final) that reads like a standard bracket; on mobile a round selector
-// shows one round at a time (a full bracket is too wide for a phone). Undecided
-// slots show which round the team arrives from ("R32 winner"), since
-// football-data.org doesn't expose exact match-to-match linkage.
+// The tournament bracket, driven by the fixed FIFA skeleton (lib/bracketSkeleton
+// + getBracket). Desktop is a left-to-right set of round columns that reads like
+// a standard bracket (matches are in bracket order, so each child centres
+// between its two feeders); mobile shows one round at a time via a selector.
+// Undecided slots carry a real "Winner M##" label from the skeleton.
 
 import { useState } from 'react';
-import type { BracketRound, BracketMatch } from '@/lib/engine';
+import type { BracketRound, BracketMatch, BracketSlot } from '@/lib/engine';
 import { Flag } from './Flag';
 
 export function Bracket({
@@ -17,7 +17,6 @@ export function Bracket({
   rounds: BracketRound[];
   thirdPlace: BracketMatch | null;
 }) {
-  // Mobile selector defaults to the first round still being played.
   const active = rounds.findIndex((r) => r.matches.some((m) => !m.played));
   const [sel, setSel] = useState(active === -1 ? 0 : active);
 
@@ -26,7 +25,7 @@ export function Bracket({
       <div className="brsel">
         {rounds.map((r, i) => (
           <button
-            key={r.key}
+            key={r.round}
             className={`brsel-btn${i === sel ? ' active' : ''}`}
             onClick={() => setSel(i)}
           >
@@ -37,16 +36,11 @@ export function Bracket({
 
       <div className="bracket">
         {rounds.map((r, i) => (
-          <div className={`bround${i === sel ? ' sel' : ''}`} key={r.key}>
+          <div className={`bround${i === sel ? ' sel' : ''}`} key={r.round}>
             <div className="brhead">{r.label}</div>
             <div className="brmatches">
               {r.matches.map((m) => (
-                <MatchCard
-                  key={m.id}
-                  m={m}
-                  feeder={rounds[i - 1]?.short ?? null}
-                  last={i === rounds.length - 1}
-                />
+                <MatchCard key={m.no} m={m} last={i === rounds.length - 1} />
               ))}
             </div>
           </div>
@@ -56,56 +50,61 @@ export function Bracket({
       {thirdPlace && (
         <div className="bthird">
           <div className="brhead">Third-place playoff</div>
-          <MatchCard m={thirdPlace} feeder="SF" feederLoser last />
+          <MatchCard m={thirdPlace} last />
         </div>
       )}
     </>
   );
 }
 
-function MatchCard({
-  m,
-  feeder,
-  feederLoser,
-  last,
+function Side({
+  slot,
+  winner,
+  score,
+  dim,
 }: {
-  m: BracketMatch;
-  feeder: string | null;
-  feederLoser?: boolean;
-  last?: boolean;
+  slot: BracketSlot;
+  winner: boolean;
+  score: number | null;
+  dim: boolean;
 }) {
-  const placeholder = feeder
-    ? `${feeder} ${feederLoser ? 'loser' : 'winner'}`
-    : 'To be decided';
-
-  const slot = (
-    team: BracketMatch['home'],
-    isWinner: boolean,
-    score: number | null,
-  ) => (
-    <div className={`bteam${isWinner ? ' win' : m.played ? ' lose' : ''}`}>
-      {team.name ? (
-        <Flag cc={team.cc} crest={team.crest} alt={team.name} />
+  return (
+    <div className={`bteam${winner ? ' win' : dim ? ' lose' : ''}`}>
+      {slot.name ? (
+        <Flag cc={slot.cc} crest={slot.crest} alt={slot.name} />
       ) : (
         <span className="flag ph" aria-hidden="true" />
       )}
-      <span className={`bname${team.name ? '' : ' tbd'}`}>
-        {team.name ?? placeholder}
+      <span className={`bname${slot.name ? '' : ' tbd'}`}>
+        {slot.name ?? slot.placeholder}
       </span>
       <span className="bscore">{score != null ? score : ''}</span>
     </div>
   );
+}
 
+function MatchCard({ m, last }: { m: BracketMatch; last?: boolean }) {
   return (
     <div className={`bmatch${last ? ' last' : ''}`}>
-      {slot(m.home, m.winner === 'home', m.homeScore)}
-      {slot(m.away, m.winner === 'away', m.awayScore)}
+      <span className="bno">M{m.no}</span>
+      <Side
+        slot={m.home}
+        winner={m.winner === 'home'}
+        score={m.homeScore}
+        dim={m.played && m.winner === 'away'}
+      />
+      <Side
+        slot={m.away}
+        winner={m.winner === 'away'}
+        score={m.awayScore}
+        dim={m.played && m.winner === 'home'}
+      />
       {m.shootout && (
         <div className="bpen">
           {m.pen ? `PEN ${m.pen.home}:${m.pen.away}` : 'PEN'}
         </div>
       )}
-      {!m.played && (m.dateLabel || m.time) && (
+      {!m.played && m.dateLabel && (
         <div className="bwhen">
           {m.dateLabel}
           {m.time ? ` · ${m.time}` : ''}

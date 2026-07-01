@@ -13,8 +13,16 @@ import {
   hasToken,
   type ApiMatch,
   type ApiStanding,
+  type ApiTableRow,
   type ApiTeamRef,
 } from './footballData';
+import {
+  SKELETON_ROUNDS,
+  THIRD_PLACE,
+  type Slot,
+  type SkeletonMatch,
+  type Round,
+} from './bracketSkeleton';
 
 const UPCOMING_STATUSES = ['SCHEDULED', 'TIMED'];
 
@@ -843,37 +851,40 @@ export function kickoffLabel(kickoff: string | null): string {
 }
 
 // ---------- TOURNAMENT BRACKET ----------
+//
+// The bracket structure (match numbers + feeder linkage) is the fixed FIFA
+// skeleton in bracketSkeleton.ts. Here we resolve the actual TEAMS from the live
+// standings/fixtures and propagate winners through the skeleton, so undecided
+// slots show the real "Winner of M##" label and the connectors are drawn from
+// the fixed adjacency.
 
-const BRACKET_ROUNDS = [
-  { key: 'LAST_32', label: 'Round of 32', short: 'R32' },
-  { key: 'LAST_16', label: 'Round of 16', short: 'R16' },
-  { key: 'QUARTER_FINALS', label: 'Quarter-finals', short: 'QF' },
-  { key: 'SEMI_FINALS', label: 'Semi-finals', short: 'SF' },
-  { key: 'FINAL', label: 'Final', short: 'Final' },
-];
-
-export interface BracketTeam {
-  name: string | null; // null until the feeding round decides it
+// A team slot: a resolved team, or a placeholder ("Winner M73") until decided.
+export interface BracketSlot {
+  name: string | null;
   cc: string | null;
   crest: string | null;
+  placeholder: string;
 }
 
 export interface BracketMatch {
-  id: number;
-  home: BracketTeam;
-  away: BracketTeam;
+  no: number; // FIFA match number (73–104)
+  round: Round;
+  home: BracketSlot;
+  away: BracketSlot;
+  homeFeeder: number | null; // feeding match number (for connectors)
+  awayFeeder: number | null;
   homeScore: number | null; // main line (end of normal + extra time)
   awayScore: number | null;
   shootout: boolean;
   pen: { home: number; away: number } | null;
-  winner: 'home' | 'away' | null; // who advances
+  winner: 'home' | 'away' | null;
   played: boolean;
   dateLabel: string;
   time: string;
 }
 
 export interface BracketRound {
-  key: string;
+  round: Round;
   label: string;
   short: string;
   matches: BracketMatch[];
@@ -887,63 +898,214 @@ export interface BracketResult {
   kickoff: string | null;
 }
 
-function bracketTeam(ref: ApiTeamRef | null | undefined): BracketTeam {
-  if (!ref || !ref.name) return { name: null, cc: null, crest: null };
-  const seed = resolveTeam(ref.name);
-  return {
-    name: seed?.name ?? ref.name,
-    cc: seed?.cc ?? null,
-    crest: ref.crest ?? null,
-  };
+interface TeamRef {
+  name: string;
+  cc: string | null;
+  crest: string | null;
 }
 
-function toBracketMatch(m: ApiMatch): BracketMatch {
-  const d = new Date(m.utcDate);
-  const valid = !Number.isNaN(d.getTime());
-  const sc = matchScore(m);
-  const played = isFinished(m);
-  const winner =
-    m.score.winner === 'HOME_TEAM'
-      ? 'home'
-      : m.score.winner === 'AWAY_TEAM'
-        ? 'away'
-        : null;
-  return {
-    id: m.id,
-    home: bracketTeam(m.homeTeam),
-    away: bracketTeam(m.awayTeam),
-    homeScore: played ? sc.home : null,
-    awayScore: played ? sc.away : null,
-    shootout: sc.shootout,
-    pen: sc.pen,
-    winner,
-    played,
-    dateLabel: valid ? shortDayFmt.format(d) : '',
-    time: valid ? timeFmt.format(d) : '',
-  };
-}
+const KO_STAGE: Record<Round, string> = {
+  R32: 'LAST_32',
+  R16: 'LAST_16',
+  QF: 'QUARTER_FINALS',
+  SF: 'SEMI_FINALS',
+  F: 'FINAL',
+  '3P': 'THIRD_PLACE',
+};
 
 export async function getBracket(): Promise<BracketResult> {
-  const data = await getMatches();
-  const matches = data?.matches ?? [];
-  const forStage = (key: string) =>
-    matches
-      .filter((m) => m.stage === key)
-      .sort((a, b) => a.utcDate.localeCompare(b.utcDate))
-      .map(toBracketMatch);
+  const [matchData, standingData] = await Promise.all([
+    getMatches(),
+    getStandings(),
+  ]);
+  const matches = matchData?.matches ?? [];
+  const standings = standingData?.standings ?? [];
 
-  const rounds: BracketRound[] = BRACKET_ROUNDS.map((r) => ({
-    ...r,
-    matches: forStage(r.key),
-  })).filter((r) => r.matches.length > 0);
+  // 1) Group position (Winner/Runner-up of each group) → team.
+  const posTeam = new Map<string, TeamRef>();
+  for (const s of standings) {
+    if (s.type && s.type !== 'TOTAL') continue;
+    const g = groupKey(s.group);
+    if (!g) continue;
+    const put = (pos: 'W' | 'R', row?: ApiTableRow) => {
+      if (!row?.team?.name) return;
+      const seed = resolveTeam(row.team.name);
+      posTeam.set(`${pos}:${g}`, {
+        name: seed?.name ?? row.team.name,
+        cc: seed?.cc ?? null,
+        crest: row.team.crest ?? null,
+      });
+    };
+    put('W', s.table.find((r) => r.position === 1) ?? s.table[0]);
+    put('R', s.table.find((r) => r.position === 2) ?? s.table[1]);
+  }
 
-  const thirdPlace = forStage('THIRD_PLACE')[0] ?? null;
-  const hasKnockouts = rounds.length > 0 || thirdPlace !== null;
+  // 2) Knockout fixtures grouped by stage, and a team resolver.
+  const koByStage = new Map<string, ApiMatch[]>();
+  for (const mm of matches) {
+    if (mm.stage === 'GROUP_STAGE') continue;
+    const arr = koByStage.get(mm.stage);
+    if (arr) arr.push(mm);
+    else koByStage.set(mm.stage, [mm]);
+  }
+  const teamOf = (ref: ApiTeamRef | null | undefined): TeamRef | null => {
+    if (!ref?.name) return null;
+    const seed = resolveTeam(ref.name);
+    return { name: seed?.name ?? ref.name, cc: seed?.cc ?? null, crest: ref.crest ?? null };
+  };
+  const findFixture = (
+    round: Round,
+    aName: string,
+    bName: string | null,
+  ): ApiMatch | null => {
+    for (const f of koByStage.get(KO_STAGE[round]) ?? []) {
+      const names = [teamOf(f.homeTeam)?.name, teamOf(f.awayTeam)?.name].filter(
+        Boolean,
+      ) as string[];
+      if (!names.includes(aName)) continue;
+      if (bName && !names.includes(bName)) continue;
+      return f;
+    }
+    return null;
+  };
+
+  // 3) Resolve a slot to a team (or placeholder), tracking the feeder match.
+  const results = new Map<number, { winner: TeamRef | null; loser: TeamRef | null }>();
+  const resolveSlot = (
+    slot: Slot,
+  ): { team: TeamRef | null; placeholder: string; feeder: number | null } => {
+    switch (slot.kind) {
+      case 'winnerGroup':
+        return {
+          team: posTeam.get(`W:${slot.group}`) ?? null,
+          placeholder: `Winner Group ${slot.group}`,
+          feeder: null,
+        };
+      case 'runnerUpGroup':
+        return {
+          team: posTeam.get(`R:${slot.group}`) ?? null,
+          placeholder: `Runner-up Group ${slot.group}`,
+          feeder: null,
+        };
+      case 'thirdPlace':
+        return { team: null, placeholder: '3rd place', feeder: null };
+      case 'winnerOf':
+        return {
+          team: results.get(slot.match)?.winner ?? null,
+          placeholder: `Winner M${slot.match}`,
+          feeder: slot.match,
+        };
+      case 'loserOf':
+        return {
+          team: results.get(slot.match)?.loser ?? null,
+          placeholder: `Loser M${slot.match}`,
+          feeder: slot.match,
+        };
+    }
+  };
+
+  const build = (sk: SkeletonMatch): BracketMatch => {
+    const hs = resolveSlot(sk.home);
+    const as = resolveSlot(sk.away);
+    // Anchor = the home slot's team when known (R32 home is always definite);
+    // otherwise the away slot. Locate the live fixture by that team.
+    const anchor = hs.team?.name ?? as.team?.name ?? null;
+    const second = hs.team && as.team ? as.team.name : null;
+    const fixture = anchor ? findFixture(sk.round, anchor, second) : null;
+
+    let home = hs.team;
+    let away = as.team;
+    let homeScore: number | null = null;
+    let awayScore: number | null = null;
+    let pen: { home: number; away: number } | null = null;
+    let shootout = false;
+    let winner: 'home' | 'away' | null = null;
+    let played = false;
+    let dateLabel = '';
+    let time = '';
+
+    if (fixture) {
+      const fh = teamOf(fixture.homeTeam);
+      const fa = teamOf(fixture.awayTeam);
+      // Bracket-home corresponds to whichever fixture side holds the home slot's
+      // team (or, when only the away slot is known, the away team's opponent).
+      const homeIsFixtureHome = hs.team
+        ? fh?.name === hs.team.name
+        : fa?.name !== as.team?.name;
+      home = home ?? (homeIsFixtureHome ? fh : fa);
+      away = away ?? (homeIsFixtureHome ? fa : fh);
+
+      const sc = matchScore(fixture);
+      shootout = sc.shootout;
+      played = isFinished(fixture);
+      if (played) {
+        homeScore = homeIsFixtureHome ? sc.home : sc.away;
+        awayScore = homeIsFixtureHome ? sc.away : sc.home;
+        if (sc.pen) {
+          pen = homeIsFixtureHome
+            ? sc.pen
+            : { home: sc.pen.away, away: sc.pen.home };
+        }
+        const fw =
+          fixture.score.winner === 'HOME_TEAM'
+            ? 'fh'
+            : fixture.score.winner === 'AWAY_TEAM'
+              ? 'fa'
+              : null;
+        if (fw) winner = (fw === 'fh') === homeIsFixtureHome ? 'home' : 'away';
+      }
+      const d = new Date(fixture.utcDate);
+      if (!Number.isNaN(d.getTime())) {
+        dateLabel = shortDayFmt.format(d);
+        time = timeFmt.format(d);
+      }
+    }
+
+    if (winner && home && away) {
+      results.set(
+        sk.no,
+        winner === 'home'
+          ? { winner: home, loser: away }
+          : { winner: away, loser: home },
+      );
+    }
+
+    const toSlot = (team: TeamRef | null, ph: string): BracketSlot =>
+      team
+        ? { name: team.name, cc: team.cc, crest: team.crest, placeholder: '' }
+        : { name: null, cc: null, crest: null, placeholder: ph };
+
+    return {
+      no: sk.no,
+      round: sk.round,
+      home: toSlot(home, hs.placeholder),
+      away: toSlot(away, as.placeholder),
+      homeFeeder: hs.feeder,
+      awayFeeder: as.feeder,
+      homeScore,
+      awayScore,
+      shootout,
+      pen,
+      winner,
+      played,
+      dateLabel,
+      time,
+    };
+  };
+
+  // Build in skeleton order (R32 → Final); feeders always resolve first.
+  const rounds: BracketRound[] = SKELETON_ROUNDS.map((r) => ({
+    round: r.round,
+    label: r.label,
+    short: r.short,
+    matches: r.matches.map(build),
+  }));
+  const thirdPlace = build(THIRD_PLACE);
 
   return {
     rounds,
     thirdPlace,
-    hasKnockouts,
+    hasKnockouts: koByStage.size > 0,
     hasToken: hasToken(),
     kickoff: firstKickoff(matches),
   };
