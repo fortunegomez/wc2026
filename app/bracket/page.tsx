@@ -1,4 +1,4 @@
-import { getBracket, kickoffLabel } from '@/lib/engine';
+import { getBracket, getFixtures, kickoffLabel } from '@/lib/engine';
 import { SiteHeader } from '@/components/SiteHeader';
 import { Bracket } from '@/components/Bracket';
 import { EmptyState } from '@/components/EmptyState';
@@ -6,8 +6,13 @@ import { EmptyState } from '@/components/EmptyState';
 export const revalidate = 300;
 
 export default async function BracketPage() {
-  const { rounds, thirdPlace, hasKnockouts, hasToken, kickoff } =
-    await getBracket();
+  const [{ rounds, thirdPlace, hasKnockouts, hasToken, kickoff }, fixturesData] =
+    await Promise.all([getBracket(), getFixtures()]);
+  // Flat list of every fixture, so the bracket can open the same popup as
+  // Fixtures & Results for each played match (matched by teams).
+  const fixtures = fixturesData.sections.flatMap((s) =>
+    s.days.flatMap((d) => d.matches),
+  );
 
   return (
     <>
@@ -37,7 +42,7 @@ export default async function BracketPage() {
             )}
           </EmptyState>
         ) : (
-          <Bracket rounds={rounds} thirdPlace={thirdPlace} />
+          <Bracket rounds={rounds} thirdPlace={thirdPlace} fixtures={fixtures} />
         )}
       </div>
     </>

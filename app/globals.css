@@ -454,19 +454,37 @@ h1.title .em {
 }
 
 /* ---------- Tournament bracket ---------- */
-.brsel {
-  display: none; /* mobile only */
-}
-.bracket {
-  display: flex;
-  gap: 22px;
-  align-items: stretch;
+/* Desktop: bracket-ordered columns with an SVG connector overlay whose line
+   coordinates are measured from the real card positions (see Bracket.tsx). */
+.bracket-desktop {
   overflow-x: auto;
   padding-bottom: 8px;
 }
+.bd-inner {
+  position: relative;
+  display: flex;
+  gap: 40px; /* room for the connector elbows between columns */
+  align-items: stretch;
+  width: max-content;
+}
+.bd-svg {
+  position: absolute;
+  inset: 0;
+  pointer-events: none; /* never blocks card clicks */
+  overflow: visible;
+}
+.bd-svg path {
+  fill: none;
+  stroke: var(--line);
+  stroke-width: 2;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
 .bround {
+  position: relative; /* sit above the SVG */
+  z-index: 1;
   flex: 0 0 auto;
-  min-width: 200px;
+  min-width: 190px;
   display: flex;
   flex-direction: column;
 }
@@ -480,8 +498,8 @@ h1.title .em {
   text-align: center;
 }
 .brmatches {
-  /* space-around evenly distributes each round, so a child centres exactly
-     between its two feeders (matches are supplied in bracket order). */
+  /* space-around evenly distributes each round; combined with bracket-ordered
+     cards it lines children up with their feeders (the SVG then measures it). */
   display: flex;
   flex-direction: column;
   justify-content: space-around;
@@ -498,6 +516,20 @@ h1.title .em {
   flex-direction: column;
   gap: 3px;
 }
+.bmatch.clickable {
+  cursor: pointer;
+  transition:
+    border-color 0.2s,
+    background 0.2s;
+}
+.bmatch.clickable:hover {
+  border-color: var(--accent-2);
+  background: var(--panel-2);
+}
+.bmatch.clickable:focus-visible {
+  outline: 2px solid var(--accent-2);
+  outline-offset: 2px;
+}
 .bno {
   position: absolute;
   top: 3px;
@@ -509,25 +541,6 @@ h1.title .em {
   letter-spacing: 1px;
   color: var(--muted);
   opacity: 0.55;
-}
-/* connector stubs between rounds (fixed adjacency reads left-to-right) */
-.bmatch:not(.last)::after {
-  content: '';
-  position: absolute;
-  right: -22px;
-  top: 50%;
-  width: 22px;
-  height: 1px;
-  background: var(--line);
-}
-.bround:not(:first-child) .bmatch::before {
-  content: '';
-  position: absolute;
-  left: -22px;
-  top: 50%;
-  width: 22px;
-  height: 1px;
-  background: var(--line);
 }
 .bteam {
   display: grid;
@@ -588,57 +601,69 @@ h1.title .em {
   color: var(--muted);
   text-align: center;
 }
+.bhint {
+  font-family: 'IBM Plex Mono';
+  font-size: 9px;
+  letter-spacing: 0.5px;
+  color: var(--muted);
+  text-align: center;
+  margin-top: 3px;
+}
 .bthird {
-  margin-top: 20px;
+  margin-top: 24px;
   max-width: 240px;
 }
 
-@media (max-width: 720px) {
-  .brsel {
-    display: flex;
-    gap: 6px;
-    margin-bottom: 16px;
+/* Mobile: one round at a time with prev/next arrows (hidden on desktop). */
+.bracket-mobile {
+  display: none;
+}
+.bm-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 16px;
+}
+.bm-round {
+  font-family: 'Anton';
+  font-weight: 400;
+  font-size: 20px;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  color: var(--text);
+  text-align: center;
+  flex: 1;
+}
+.bm-arrow {
+  flex: none;
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  background: var(--ink-2);
+  color: var(--accent-2);
+  font-size: 22px;
+  line-height: 1;
+  cursor: pointer;
+}
+.bm-arrow:disabled {
+  color: var(--muted);
+  opacity: 0.4;
+  cursor: default;
+}
+.bm-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+@media (max-width: 767px) {
+  .bracket-desktop {
+    display: none;
   }
-  .brsel-btn {
-    flex: 1;
-    min-width: 0;
-    font-family: 'IBM Plex Mono';
-    font-size: 11px;
-    letter-spacing: 1px;
-    text-transform: uppercase;
-    color: var(--muted);
-    background: var(--ink-2);
-    border: 1px solid var(--line);
-    border-radius: 9px;
-    padding: 9px 4px;
-    cursor: pointer;
-  }
-  .brsel-btn.active {
-    color: var(--accent-2);
-    border-color: var(--accent-2);
-    background: rgba(19, 224, 196, 0.08);
-  }
-  .bracket {
+  .bracket-mobile {
     display: block;
-    overflow: visible;
-  }
-  .bround {
-    display: none;
-    min-width: 0;
-    width: 100%;
-  }
-  .bround.sel {
-    display: flex;
-  }
-  .brmatches {
-    justify-content: flex-start;
-  }
-  .bmatch:not(.last)::after,
-  .bround:not(:first-child) .bmatch::before {
-    display: none;
-  }
-  .bthird {
-    max-width: none;
   }
 }
 
