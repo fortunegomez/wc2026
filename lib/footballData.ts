@@ -71,18 +71,29 @@ export function hasToken(): boolean {
   return Boolean(process.env.FOOTBALL_DATA_TOKEN);
 }
 
+// Last successful parsed response per path, kept in server memory. When a fetch
+// briefly fails (most often a free-tier rate-limit 429), we serve this
+// last-known-good data instead of null, so the app doesn't flip to its empty /
+// "pre-tournament" state over a transient blip. It persists across requests on a
+// warm server instance and refreshes on every success; a cold start simply has
+// nothing cached yet (and falls back to null, as before).
+const lastGood = new Map<string, unknown>();
+
 async function fd<T>(path: string, revalidate: number): Promise<T | null> {
   const token = process.env.FOOTBALL_DATA_TOKEN;
   if (!token) return null;
+  const stale = () => (lastGood.get(path) as T | undefined) ?? null;
   try {
     const res = await fetch(`${BASE}${path}`, {
       headers: { 'X-Auth-Token': token },
       next: { revalidate, tags: ['wc'] },
     });
-    if (!res.ok) return null;
-    return (await res.json()) as T;
+    if (!res.ok) return stale();
+    const data = (await res.json()) as T;
+    lastGood.set(path, data);
+    return data;
   } catch {
-    return null;
+    return stale();
   }
 }
 
