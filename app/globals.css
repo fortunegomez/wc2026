@@ -601,20 +601,13 @@ h1.title .em {
   color: var(--muted);
   text-align: center;
 }
-.bhint {
-  font-family: 'IBM Plex Mono';
-  font-size: 9px;
-  letter-spacing: 0.5px;
-  color: var(--muted);
-  text-align: center;
-  margin-top: 3px;
-}
 .bthird {
   margin-top: 24px;
   max-width: 240px;
 }
 
-/* Mobile: one round at a time with prev/next arrows (hidden on desktop). */
+/* Mobile: the selected round + the next round as a connected slice, stepped
+   with prev/next arrows (hidden on desktop). Reuses the .bd-* column styles. */
 .bracket-mobile {
   display: none;
 }
@@ -652,10 +645,9 @@ h1.title .em {
   opacity: 0.4;
   cursor: default;
 }
-.bm-list {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
+.bm-scroll {
+  overflow-x: auto;
+  padding-bottom: 8px;
 }
 
 @media (max-width: 767px) {

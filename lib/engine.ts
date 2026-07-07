@@ -1043,6 +1043,14 @@ export async function getBracket(): Promise<BracketResult> {
 
   // 3) Resolve a slot to a team (or placeholder), tracking the feeder match.
   const results = new Map<number, { winner: TeamRef | null; loser: TeamRef | null }>();
+  // Each built match's resolved team names, so an undecided downstream slot can
+  // show the two teams competing for it ("France / Morocco") instead of a bare
+  // "Winner M97". Feeders build first, so a child's feeder is already recorded.
+  const builtByNo = new Map<number, { home: string | null; away: string | null }>();
+  const competitors = (matchNo: number, fallback: string): string => {
+    const b = builtByNo.get(matchNo);
+    return b && b.home && b.away ? `${b.home} / ${b.away}` : fallback;
+  };
   const resolveSlot = (
     slot: Slot,
   ): { team: TeamRef | null; placeholder: string; feeder: number | null } => {
@@ -1064,13 +1072,13 @@ export async function getBracket(): Promise<BracketResult> {
       case 'winnerOf':
         return {
           team: results.get(slot.match)?.winner ?? null,
-          placeholder: `Winner M${slot.match}`,
+          placeholder: competitors(slot.match, `Winner M${slot.match}`),
           feeder: slot.match,
         };
       case 'loserOf':
         return {
           team: results.get(slot.match)?.loser ?? null,
-          placeholder: `Loser M${slot.match}`,
+          placeholder: competitors(slot.match, `Loser M${slot.match}`),
           feeder: slot.match,
         };
     }
@@ -1141,6 +1149,7 @@ export async function getBracket(): Promise<BracketResult> {
           : { winner: away, loser: home },
       );
     }
+    builtByNo.set(sk.no, { home: home?.name ?? null, away: away?.name ?? null });
 
     const toSlot = (team: TeamRef | null, ph: string): BracketSlot =>
       team

@@ -1,37 +1,30 @@
 'use client';
 
-// The tournament bracket. Desktop: bracket-ordered columns with an SVG overlay
-// whose connector coordinates are measured from the ACTUAL card positions (so
-// they always line up). Mobile: one round at a time with prev/next arrows and a
-// "winner goes to M##" hint under each card. Played matches open the same
-// match-detail popup used on Fixtures & Results.
+// The tournament bracket. Columns of match cards with an SVG overlay whose
+// elbow connectors are measured from the ACTUAL card positions, so they always
+// line up. Desktop shows the full bracket; mobile shows a 2-column slice — the
+// selected round plus the next round, connected — with prev/next arrows.
+// Played matches open the same match-detail popup used on Fixtures & Results.
 
 import {
   useCallback,
   useEffect,
   useLayoutEffect,
+  useMemo,
   useRef,
   useState,
 } from 'react';
-import type { BracketRound, BracketMatch, BracketSlot, FixtureMatch } from '@/lib/engine';
-import { SKELETON_ROUNDS, THIRD_PLACE } from '@/lib/bracketSkeleton';
+import type {
+  BracketRound,
+  BracketMatch,
+  BracketSlot,
+  FixtureMatch,
+} from '@/lib/engine';
 import { Flag } from './Flag';
 import { Popup } from './Popup';
 import { GameCard } from './GameCard';
 
 const useIsoEffect = typeof window !== 'undefined' ? useLayoutEffect : useEffect;
-
-// Match number → the match its WINNER advances to (from the fixed skeleton).
-const WINNER_TO: Map<number, number> = (() => {
-  const map = new Map<number, number>();
-  const all = [...SKELETON_ROUNDS.flatMap((r) => r.matches), THIRD_PLACE];
-  for (const sm of all) {
-    for (const slot of [sm.home, sm.away]) {
-      if (slot.kind === 'winnerOf') map.set(slot.match, sm.no);
-    }
-  }
-  return map;
-})();
 
 const pairKey = (a: string, b: string) => [a, b].sort().join('|');
 
@@ -57,16 +50,114 @@ export function Bracket({
 
   const [popup, setPopup] = useState<FixtureMatch | null>(null);
 
-  // ----- mobile round stepper (main rounds + third place) -----
-  const mobileRounds = [
-    ...rounds.map((r) => ({ label: r.label, matches: r.matches })),
-    ...(thirdPlace ? [{ label: 'Third place', matches: [thirdPlace] }] : []),
-  ];
+  // Mobile steps: each round paired with the next (a 2-column slice), then the
+  // third-place match on its own as the final step.
+  const steps = useMemo(() => {
+    const s = rounds.map((r, i) => ({
+      label: r.label,
+      slice: [rounds[i], rounds[i + 1]].filter(Boolean) as BracketRound[],
+    }));
+    if (thirdPlace) {
+      s.push({
+        label: 'Third place',
+        slice: [
+          {
+            round: '3P' as BracketRound['round'],
+            label: 'Third-place playoff',
+            short: '3rd',
+            matches: [thirdPlace],
+          },
+        ],
+      });
+    }
+    return s;
+  }, [rounds, thirdPlace]);
+
   const firstLive = rounds.findIndex((r) => r.matches.some((m) => !m.played));
   const [sel, setSel] = useState(firstLive === -1 ? 0 : firstLive);
-  const clampSel = Math.min(sel, mobileRounds.length - 1);
+  const clampSel = Math.min(Math.max(sel, 0), steps.length - 1);
 
-  // ----- desktop SVG connectors, measured from real card positions -----
+  return (
+    <>
+      {/* ===== Desktop: full bracket ===== */}
+      <div className="bracket-desktop">
+        <BracketColumns rounds={rounds} fixtureFor={fixtureFor} onOpen={setPopup} />
+        {thirdPlace && (
+          <div className="bthird">
+            <div className="brhead">Third-place playoff</div>
+            <MatchCard
+              m={thirdPlace}
+              fixture={fixtureFor(thirdPlace)}
+              onOpen={setPopup}
+              cardRef={noopRef}
+            />
+          </div>
+        )}
+      </div>
+
+      {/* ===== Mobile: selected round + next round, connected ===== */}
+      <div className="bracket-mobile">
+        <div className="bm-head">
+          <button
+            className="bm-arrow"
+            onClick={() => setSel((s) => Math.max(0, s - 1))}
+            disabled={clampSel === 0}
+            aria-label="Previous round"
+          >
+            ‹
+          </button>
+          <span className="bm-round">{steps[clampSel]?.label}</span>
+          <button
+            className="bm-arrow"
+            onClick={() => setSel((s) => Math.min(steps.length - 1, s + 1))}
+            disabled={clampSel === steps.length - 1}
+            aria-label="Next round"
+          >
+            ›
+          </button>
+        </div>
+        <div className="bm-scroll">
+          <BracketColumns
+            key={clampSel}
+            rounds={steps[clampSel]?.slice ?? []}
+            fixtureFor={fixtureFor}
+            onOpen={setPopup}
+          />
+        </div>
+      </div>
+
+      <Popup
+        open={popup !== null}
+        onClose={() => setPopup(null)}
+        title={
+          popup && (
+            <span className="pop-fixturetitle">
+              {popup.home.name} <span className="pop-vs">v</span> {popup.away.name}
+            </span>
+          )
+        }
+      >
+        {popup && <GameCard m={popup} standing={null} />}
+      </Popup>
+    </>
+  );
+}
+
+const noopRef = () => {};
+
+// Renders a set of round columns with an SVG connector overlay whose paths are
+// measured from the real card rects. A connector is only drawn when both a
+// child and its feeder card are present, so a 2-column slice draws just the
+// next-round → current-round elbows.
+function BracketColumns({
+  rounds,
+  fixtureFor,
+  onOpen,
+}: {
+  rounds: BracketRound[];
+  fixtureFor: (m: BracketMatch) => FixtureMatch | null;
+  onOpen: (f: FixtureMatch) => void;
+}) {
   const innerRef = useRef<HTMLDivElement | null>(null);
   const cardRefs = useRef(new Map<number, HTMLDivElement>());
   const setCardRef = useCallback((no: number, el: HTMLDivElement | null) => {
@@ -103,7 +194,6 @@ export function Bracket({
           const f = rectOf(feederNo);
           if (!f) continue;
           const midX = (f.right + child.left) / 2;
-          // elbow: feeder right-edge → midpoint X → child centre Y → child left-edge
           out.push(
             `M ${f.right} ${f.cy} H ${midX} V ${child.cy} H ${child.left}`,
           );
@@ -131,94 +221,35 @@ export function Bracket({
   }, [compute]);
 
   return (
-    <>
-      {/* ===== Desktop: full bracket with measured SVG connectors ===== */}
-      <div className="bracket-desktop">
-        <div className="bd-inner" ref={innerRef}>
-          <svg
-            className="bd-svg"
-            width={size.w}
-            height={size.h}
-            viewBox={`0 0 ${size.w} ${size.h}`}
-            aria-hidden="true"
-          >
-            {paths.map((d, i) => (
-              <path key={i} d={d} />
-            ))}
-          </svg>
-          {rounds.map((r) => (
-            <div className="bround" key={r.round}>
-              <div className="brhead">{r.label}</div>
-              <div className="brmatches">
-                {r.matches.map((m) => (
-                  <MatchCard
-                    key={m.no}
-                    m={m}
-                    fixture={fixtureFor(m)}
-                    onOpen={setPopup}
-                    cardRef={setCardRef}
-                  />
-                ))}
-              </div>
-            </div>
-          ))}
-        </div>
-        {thirdPlace && (
-          <div className="bthird">
-            <div className="brhead">Third-place playoff</div>
-            <MatchCard
-              m={thirdPlace}
-              fixture={fixtureFor(thirdPlace)}
-              onOpen={setPopup}
-            />
-          </div>
-        )}
-      </div>
-
-      {/* ===== Mobile: one round at a time with prev/next arrows ===== */}
-      <div className="bracket-mobile">
-        <div className="bm-head">
-          <button
-            className="bm-arrow"
-            onClick={() => setSel((s) => Math.max(0, s - 1))}
-            disabled={clampSel === 0}
-            aria-label="Previous round"
-          >
-            ‹
-          </button>
-          <span className="bm-round">{mobileRounds[clampSel]?.label}</span>
-          <button
-            className="bm-arrow"
-            onClick={() =>
-              setSel((s) => Math.min(mobileRounds.length - 1, s + 1))
-            }
-            disabled={clampSel === mobileRounds.length - 1}
-            aria-label="Next round"
-          >
-            ›
-          </button>
-        </div>
-        <div className="bm-list">
-          {mobileRounds[clampSel]?.matches.map((m) => (
-            <MatchCard key={m.no} m={m} fixture={fixtureFor(m)} onOpen={setPopup} hint />
-          ))}
-        </div>
-      </div>
-
-      <Popup
-        open={popup !== null}
-        onClose={() => setPopup(null)}
-        title={
-          popup && (
-            <span className="pop-fixturetitle">
-              {popup.home.name} <span className="pop-vs">v</span> {popup.away.name}
-            </span>
-          )
-        }
+    <div className="bd-inner" ref={innerRef}>
+      <svg
+        className="bd-svg"
+        width={size.w}
+        height={size.h}
+        viewBox={`0 0 ${size.w} ${size.h}`}
+        aria-hidden="true"
       >
-        {popup && <GameCard m={popup} standing={null} />}
-      </Popup>
-    </>
+        {paths.map((d, i) => (
+          <path key={i} d={d} />
+        ))}
+      </svg>
+      {rounds.map((r) => (
+        <div className="bround" key={r.round}>
+          <div className="brhead">{r.label}</div>
+          <div className="brmatches">
+            {r.matches.map((m) => (
+              <MatchCard
+                key={m.no}
+                m={m}
+                fixture={fixtureFor(m)}
+                onOpen={onOpen}
+                cardRef={setCardRef}
+              />
+            ))}
+          </div>
+        </div>
+      ))}
+    </div>
   );
 }
 
@@ -253,20 +284,17 @@ function MatchCard({
   fixture,
   onOpen,
   cardRef,
-  hint,
 }: {
   m: BracketMatch;
   fixture: FixtureMatch | null;
   onOpen: (f: FixtureMatch) => void;
-  cardRef?: (no: number, el: HTMLDivElement | null) => void;
-  hint?: boolean;
+  cardRef: (no: number, el: HTMLDivElement | null) => void;
 }) {
   const clickable = fixture !== null;
-  const dest = WINNER_TO.get(m.no);
   return (
     <div
       className={`bmatch${clickable ? ' clickable' : ''}`}
-      ref={cardRef ? (el) => cardRef(m.no, el) : undefined}
+      ref={(el) => cardRef(m.no, el)}
       role={clickable ? 'button' : undefined}
       tabIndex={clickable ? 0 : undefined}
       onClick={clickable ? () => onOpen(fixture) : undefined}
@@ -305,7 +333,6 @@ function MatchCard({
           {m.time ? ` · ${m.time}` : ''}
         </div>
       )}
-      {hint && dest && <div className="bhint">→ Winner to M{dest}</div>}
     </div>
   );
 }
