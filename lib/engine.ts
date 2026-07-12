@@ -309,27 +309,62 @@ interface KnockoutStatus {
   active: boolean; // have the knockouts started at all?
 }
 
-// Works out who is still in purely from the knockout fixtures: a team is out
-// the moment it loses a knockout match; everyone in the bracket who hasn't lost
-// is still in. (No group-stage logic — once the bracket exists, any team that
-// isn't in it didn't qualify and is treated as out by the caller.)
+// Knockout rounds in order, so we can tell when a team has advanced past a
+// match. (Third place is off the main path and intentionally omitted.)
+const ROUND_ORDER: Record<string, number> = {
+  LAST_32: 0,
+  LAST_16: 1,
+  QUARTER_FINALS: 2,
+  SEMI_FINALS: 3,
+  FINAL: 4,
+};
+
+// Works out who is still in purely from the knockout fixtures: a team is out the
+// moment it loses a knockout match — OR the moment its opponent advances to a
+// later round (which covers a lagging feed that records a quarter-final before
+// marking the round-of-16 tie played). Everyone in the bracket who's neither is
+// still in. (No group-stage logic — once the bracket exists, any team that isn't
+// in it didn't qualify and is treated as out by the caller.)
 function knockoutStatus(matches: ApiMatch[]): KnockoutStatus {
   const inBracket = new Set<string>();
   const eliminated = new Set<string>();
   const eliminatedAt = new Map<string, string>();
-  for (const m of matches) {
-    if (!isKnockout(m)) continue;
-    const home = resolveTeam(m.homeTeam.name);
-    const away = resolveTeam(m.awayTeam.name);
-    if (home) inBracket.add(home.name);
-    if (away) inBracket.add(away.name);
-    if (!isFinished(m)) continue;
-    const loser = knockoutLoser(m, home, away);
-    if (loser) {
-      eliminated.add(loser.name);
-      eliminatedAt.set(loser.name, m.utcDate);
+  const ko = matches.filter(isKnockout);
+
+  // First pass: bracket membership + the furthest round each team appears in.
+  const maxRound = new Map<string, number>();
+  for (const m of ko) {
+    const r = ROUND_ORDER[m.stage];
+    for (const ref of [m.homeTeam, m.awayTeam]) {
+      const seed = resolveTeam(ref.name);
+      if (!seed) continue;
+      inBracket.add(seed.name);
+      if (r != null) {
+        maxRound.set(seed.name, Math.max(maxRound.get(seed.name) ?? -1, r));
+      }
     }
   }
+
+  const out = (name: string, when: string) => {
+    eliminated.add(name);
+    if (!eliminatedAt.has(name)) eliminatedAt.set(name, when);
+  };
+
+  // Second pass: eliminate the loser of each finished match, and any team whose
+  // opponent has already advanced to a later round.
+  for (const m of ko) {
+    const home = resolveTeam(m.homeTeam.name);
+    const away = resolveTeam(m.awayTeam.name);
+    const r = ROUND_ORDER[m.stage];
+    if (r != null && home && away) {
+      if ((maxRound.get(away.name) ?? -1) > r) out(home.name, m.utcDate);
+      if ((maxRound.get(home.name) ?? -1) > r) out(away.name, m.utcDate);
+    }
+    if (!isFinished(m)) continue;
+    const loser = knockoutLoser(m, home, away);
+    if (loser) out(loser.name, m.utcDate);
+  }
+
   return { inBracket, eliminated, eliminatedAt, active: inBracket.size > 0 };
 }
 
