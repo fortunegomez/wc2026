@@ -765,6 +765,92 @@ footer {
   text-transform: uppercase;
 }
 
+/* ---------- THE RACE: podium & finalists ---------- */
+.trophy {
+  width: 24px;
+  height: 24px;
+  display: block;
+  margin: 0 auto;
+}
+.trophy path {
+  fill: currentColor;
+}
+.trophy.gold {
+  color: var(--gold);
+  filter: drop-shadow(0 0 6px rgba(255, 207, 74, 0.45));
+}
+.trophy.silver {
+  color: #c7cfdd;
+}
+.trophy.bronze {
+  color: #d08a4e;
+}
+.row.champion {
+  background: linear-gradient(90deg, rgba(255, 207, 74, 0.12), transparent 70%);
+  border: 1px solid rgba(255, 207, 74, 0.35);
+}
+.row.champion:hover {
+  background: linear-gradient(90deg, rgba(255, 207, 74, 0.16), transparent 70%);
+}
+.row.champion .name {
+  color: var(--gold);
+}
+.tag-status {
+  font-family: 'IBM Plex Mono';
+  font-size: 9px;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  padding: 1px 6px;
+  border-radius: 5px;
+  margin-left: 8px;
+  vertical-align: middle;
+}
+.tag-status.finalist {
+  color: var(--accent-2);
+  background: rgba(19, 224, 196, 0.14);
+}
+.tag-status.bronze {
+  color: #d79a5e;
+  background: rgba(205, 138, 74, 0.16);
+}
+.pct.champ {
+  font-family: 'IBM Plex Mono';
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  color: var(--gold);
+}
+.pct.medal {
+  font-family: 'IBM Plex Mono';
+  font-size: 11px;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.pct.pending {
+  font-family: 'IBM Plex Mono';
+  font-size: 10px;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.pop-out.gold {
+  border-color: rgba(255, 207, 74, 0.5);
+  background: rgba(255, 207, 74, 0.1);
+  color: var(--gold);
+}
+.pop-out.silver {
+  border-color: rgba(199, 207, 221, 0.5);
+  background: rgba(199, 207, 221, 0.08);
+  color: #c7cfdd;
+}
+.pop-out.bronze {
+  border-color: rgba(205, 138, 74, 0.5);
+  background: rgba(205, 138, 74, 0.1);
+  color: #d79a5e;
+}
+
 /* ---------- Fixtures sections & clickable rows ---------- */
 .section-head {
   font-family: 'Anton';

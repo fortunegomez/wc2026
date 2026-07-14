@@ -5,16 +5,25 @@ import { RaceBoard } from '@/components/RaceBoard';
 export const revalidate = 300;
 
 export default async function Home() {
-  const { board, teamDetails, started, hasToken, knockoutActive, aliveCount } =
-    await getBoard();
+  const {
+    board,
+    teamDetails,
+    started,
+    hasToken,
+    knockoutActive,
+    aliveCount,
+    champion,
+  } = await getBoard();
   const max = board.find((t) => !t.eliminated)?.pct || 1;
   const phase = !hasToken
     ? 'Preview · seed ratings'
-    : knockoutActive
-      ? `${aliveCount} still in`
-      : started
-        ? 'Updating live'
-        : 'Pre-tournament';
+    : champion
+      ? 'Champions'
+      : knockoutActive
+        ? `${aliveCount} still in`
+        : started
+          ? 'Updating live'
+          : 'Pre-tournament';
 
   return (
     <>
@@ -55,9 +64,11 @@ export default async function Home() {
         shift using the Elo formula FIFA uses (a bigger winning margin moves them
         more), then every percentage is recalculated. In the knockout rounds a
         team is out the moment it loses — eliminated teams drop to 0% and the
-        chances are shared among those still in. ▲▼ shows movement since the
-        pre-tournament seeding. It gives odds, never certainty — football stays
-        unpredictable.
+        chances are shared among those still in. From the semifinals the two
+        finalists split the title odds between them; the semifinal losers play
+        for bronze, and the board ends with the champion, runner-up and third
+        place. ▲▼ shows movement since the pre-tournament seeding. It gives odds,
+        never certainty — football stays unpredictable.
       </div>
     </>
   );

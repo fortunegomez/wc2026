@@ -135,6 +135,16 @@ function groupKey(g: string | null): string | null {
 
 // ---------- THE RACE ----------
 
+// End-of-tournament status, derived from the knockout fixtures.
+export type BoardStatus =
+  | 'alive' // still in, pre-semifinal (has a live title chance)
+  | 'finalist' // won a semifinal
+  | 'bronzeContender' // lost a semifinal, awaiting the third-place match
+  | 'champion' // won the final
+  | 'runnerUp' // lost the final
+  | 'thirdPlace' // won the third-place match
+  | 'eliminated'; // out (greyed)
+
 export interface BoardTeam extends SeedTeam {
   seedRating: number;
   pct: number;
@@ -143,6 +153,7 @@ export interface BoardTeam extends SeedTeam {
   delta: number; // seedRank - rank; positive = climbed since seeding
   eliminated: boolean;
   eliminatedAt: string | null; // utcDate of the knockout match it lost
+  status: BoardStatus;
 }
 
 export interface BoardResult {
@@ -155,6 +166,7 @@ export interface BoardResult {
   hasData: boolean;
   knockoutActive: boolean; // are we in the knockout rounds?
   aliveCount: number; // how many teams are still in
+  champion: string | null; // set once the final is decided
 }
 
 // A single match from one team's point of view (used in the team popup).
@@ -368,6 +380,48 @@ function knockoutStatus(matches: ApiMatch[]): KnockoutStatus {
   return { inBracket, eliminated, eliminatedAt, active: inBracket.size > 0 };
 }
 
+// The winner/loser (seed names) of each finished match in a stage.
+function stageResults(
+  matches: ApiMatch[],
+  stage: string,
+): { winner: string; loser: string }[] {
+  const out: { winner: string; loser: string }[] = [];
+  for (const m of matches) {
+    if (m.stage !== stage || !isFinished(m)) continue;
+    const home = resolveTeam(m.homeTeam.name);
+    const away = resolveTeam(m.awayTeam.name);
+    const loser = knockoutLoser(m, home, away);
+    if (!home || !away || !loser) continue;
+    const winner = loser.name === home.name ? away : home;
+    out.push({ winner: winner.name, loser: loser.name });
+  }
+  return out;
+}
+
+interface Podium {
+  finalists: Set<string>; // semifinal winners
+  bronze: Set<string>; // semifinal losers
+  champion: string | null;
+  runnerUp: string | null;
+  thirdPlace: string | null;
+  thirdLoser: string | null;
+}
+
+// End-of-tournament roles from the semifinals onward.
+function computePodium(matches: ApiMatch[]): Podium {
+  const sf = stageResults(matches, 'SEMI_FINALS');
+  const fin = stageResults(matches, 'FINAL')[0] ?? null;
+  const third = stageResults(matches, 'THIRD_PLACE')[0] ?? null;
+  return {
+    finalists: new Set(sf.map((x) => x.winner)),
+    bronze: new Set(sf.map((x) => x.loser)),
+    champion: fin?.winner ?? null,
+    runnerUp: fin?.loser ?? null,
+    thirdPlace: third?.winner ?? null,
+    thirdLoser: third?.loser ?? null,
+  };
+}
+
 export async function getBoard(): Promise<BoardResult> {
   const [matchData, standingData] = await Promise.all([
     getMatches(),
@@ -384,43 +438,74 @@ export async function getBoard(): Promise<BoardResult> {
   const isEliminated = (name: string): boolean =>
     ko.eliminated.has(name) || (ko.active && !ko.inBracket.has(name));
 
-  const rated = SEED.map((t) => ({
+  const podium = computePodium(matches);
+  const finalDone = podium.champion !== null;
+
+  // A team's board status. Podium roles (champion/runner-up/third + its loser)
+  // take precedence over the raw knockout result, so a semifinal loser reads as
+  // a bronze contender (not "eliminated") until the third-place match is played.
+  const statusOf = (name: string): BoardStatus => {
+    if (podium.champion === name) return 'champion';
+    if (podium.runnerUp === name) return 'runnerUp';
+    if (podium.thirdPlace === name) return 'thirdPlace';
+    if (podium.thirdLoser === name) return 'eliminated';
+    if (podium.finalists.has(name)) return 'finalist';
+    if (podium.bronze.has(name)) return 'bronzeContender';
+    return isEliminated(name) ? 'eliminated' : 'alive';
+  };
+
+  type Rated = SeedTeam & { seedRating: number; rating: number };
+  const rated: Rated[] = SEED.map((t) => ({
     ...t,
     seedRating: t.rating,
     rating: ratings.get(t.name) ?? t.rating,
   }));
+  const status = new Map(rated.map((t) => [t.name, statusOf(t.name)]));
 
-  // Title odds are recomputed over the survivors only, so their percentages
-  // always sum to 100%. Eliminated teams get 0%.
-  const aliveRanked = titleOdds(rated.filter((t) => !isEliminated(t.name))).sort(
-    (a, b) => b.pct - a.pct,
-  );
+  // Teams that can still win the title: the champion once decided, otherwise
+  // everyone on the winners' path (alive or a finalist). Title odds are a
+  // softmax over just these — so the two finalists sum to 100% between them.
+  const canWin = (t: Rated) =>
+    finalDone
+      ? t.name === podium.champion
+      : status.get(t.name) === 'alive' || status.get(t.name) === 'finalist';
+  const pct = new Map<string, number>();
+  for (const t of titleOdds(rated.filter(canWin))) pct.set(t.name, t.pct);
 
-  // Eliminated below the line: most recently knocked out first, then the
-  // group-stage non-qualifiers (no knockout date) by rating.
-  const elimRanked = rated
-    .filter((t) => isEliminated(t.name))
-    .map((t) => ({ ...t, pct: 0 }))
-    .sort((a, b) => {
-      const ea = ko.eliminatedAt.get(a.name);
-      const eb = ko.eliminatedAt.get(b.name);
-      if (ea && eb) return eb.localeCompare(ea);
-      if (ea) return -1;
-      if (eb) return 1;
-      return b.rating - a.rating;
-    });
+  const has = (s: BoardStatus) => rated.filter((t) => status.get(t.name) === s);
+  const byPct = (a: Rated, b: Rated) =>
+    (pct.get(b.name) ?? 0) - (pct.get(a.name) ?? 0);
 
-  const ordered = [...aliveRanked, ...elimRanked];
+  // Order: title contenders on top (champion→runner-up once the final is done,
+  // else finalists/alive by title %), then third place, the bronze contenders
+  // (no %), and finally the eliminated (greyed, most recent first).
+  const top = finalDone
+    ? [...has('champion'), ...has('runnerUp')]
+    : rated.filter(canWin).sort(byPct);
+  const bronzeRow = has('bronzeContender').sort((a, b) => b.rating - a.rating);
+  const elimRow = has('eliminated').sort((a, b) => {
+    const ea = ko.eliminatedAt.get(a.name);
+    const eb = ko.eliminatedAt.get(b.name);
+    if (ea && eb) return eb.localeCompare(ea);
+    if (ea) return -1;
+    if (eb) return 1;
+    return b.rating - a.rating;
+  });
+
+  const ordered = [...top, ...has('thirdPlace'), ...bronzeRow, ...elimRow];
   const board: BoardTeam[] = ordered.map((t, i) => {
     const rank = i + 1;
     const seedRank = seedRanks.get(t.name) ?? rank;
+    const st = status.get(t.name)!;
     return {
       ...t,
+      pct: pct.get(t.name) ?? 0,
       rank,
       seedRank,
       delta: seedRank - rank,
-      eliminated: isEliminated(t.name),
+      eliminated: st === 'eliminated',
       eliminatedAt: ko.eliminatedAt.get(t.name) ?? null,
+      status: st,
     };
   });
 
@@ -449,7 +534,8 @@ export async function getBoard(): Promise<BoardResult> {
     hasToken: hasToken(),
     hasData: matchData !== null,
     knockoutActive: ko.active,
-    aliveCount: aliveRanked.length,
+    aliveCount: board.filter((t) => t.status !== 'eliminated').length,
+    champion: podium.champion,
   };
 }
 

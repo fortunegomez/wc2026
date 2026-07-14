@@ -1,13 +1,29 @@
 'use client';
 
 // THE RACE board, made clickable. Each row opens a popup with that team's
-// title chance, its group standing, and its matches so far / upcoming. All the
-// data is computed on the server and passed in — the popup makes no API calls.
+// title chance, its group standing, and its matches so far / upcoming. From the
+// semifinals on, rows carry end-of-tournament status: finalists (title odds
+// split between the two), bronze contenders (no %), and the champion / runner-up
+// / third-place podium with trophy badges.
 
 import { Fragment, useState } from 'react';
-import type { BoardTeam, TeamDetail } from '@/lib/engine';
+import type { BoardTeam, BoardStatus, TeamDetail } from '@/lib/engine';
 import { Flag } from './Flag';
 import { Popup } from './Popup';
+
+const TROPHY: Partial<Record<BoardStatus, 'gold' | 'silver' | 'bronze'>> = {
+  champion: 'gold',
+  runnerUp: 'silver',
+  thirdPlace: 'bronze',
+};
+
+function Trophy({ place }: { place: 'gold' | 'silver' | 'bronze' }) {
+  return (
+    <svg className={`trophy ${place}`} viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M6 3h12v2h3v3a4 4 0 0 1-4 4h-.6A5.5 5.5 0 0 1 13 15.8V18h3v2H8v-2h3v-2.2A5.5 5.5 0 0 1 7.6 12H7a4 4 0 0 1-4-4V5h3V3Zm0 4H5v1a2 2 0 0 0 2 2V7Zm12 0v3a2 2 0 0 0 2-2V7h-2Z" />
+    </svg>
+  );
+}
 
 export function RaceBoard({
   board,
@@ -27,61 +43,82 @@ export function RaceBoard({
   return (
     <>
       <div>
-        {board.map((t, i) => (
-          <Fragment key={t.name}>
-            {i === firstOutIndex && (
-              <div className="outline">
-                <span>Eliminated</span>
-              </div>
-            )}
-            <div
-              className={`row clickable${
-                !t.eliminated && t.rank === 1 ? ' top1' : ''
-              }${t.eliminated ? ' out' : ''}`}
-              role="button"
-              tabIndex={0}
-              onClick={() => setSelected(t.name)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' || e.key === ' ') {
-                  e.preventDefault();
-                  setSelected(t.name);
-                }
-              }}
-            >
-              <div className="rank">{t.rank}</div>
-              <Flag cc={t.cc} alt={t.name} />
-              <div>
-                <div className="name">
-                  {t.name}
-                  {t.delta > 0 && <span className="delta up">▲{t.delta}</span>}
-                  {t.delta < 0 && (
-                    <span className="delta down">▼{-t.delta}</span>
+        {board.map((t, i) => {
+          const st = t.status;
+          const trophy = TROPHY[st];
+          const podiumWin = !!trophy;
+          return (
+            <Fragment key={t.name}>
+              {i === firstOutIndex && (
+                <div className="outline">
+                  <span>Eliminated</span>
+                </div>
+              )}
+              <div
+                className={`row clickable${st === 'champion' ? ' champion' : ''}${
+                  t.eliminated ? ' out' : ''
+                }${!podiumWin && !t.eliminated && t.rank === 1 ? ' top1' : ''}`}
+                role="button"
+                tabIndex={0}
+                onClick={() => setSelected(t.name)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    setSelected(t.name);
+                  }
+                }}
+              >
+                <div className="rank">
+                  {trophy ? <Trophy place={trophy} /> : t.rank}
+                </div>
+                <Flag cc={t.cc} alt={t.name} />
+                <div>
+                  <div className="name">
+                    {t.name}
+                    {st === 'finalist' && (
+                      <span className="tag-status finalist">Finalist</span>
+                    )}
+                    {st === 'bronzeContender' && (
+                      <span className="tag-status bronze">Bronze</span>
+                    )}
+                    {!podiumWin && t.delta > 0 && (
+                      <span className="delta up">▲{t.delta}</span>
+                    )}
+                    {!podiumWin && t.delta < 0 && (
+                      <span className="delta down">▼{-t.delta}</span>
+                    )}
+                  </div>
+                  <div className="meta">
+                    {t.conf} · rating {Math.round(t.rating)}
+                  </div>
+                </div>
+                <div className="pctwrap">
+                  {st === 'champion' ? (
+                    <div className="pct champ">Champions</div>
+                  ) : st === 'runnerUp' ? (
+                    <div className="pct medal">Runner-up</div>
+                  ) : st === 'thirdPlace' ? (
+                    <div className="pct medal">Third place</div>
+                  ) : st === 'bronzeContender' ? (
+                    <div className="pct pending">3rd-place match</div>
+                  ) : t.eliminated ? (
+                    <div className="pct out">OUT</div>
+                  ) : (
+                    <>
+                      <div className="pct">{t.pct.toFixed(1)}%</div>
+                      <div className="barback">
+                        <div
+                          className="barfill"
+                          style={{ width: `${((t.pct / max) * 100).toFixed(1)}%` }}
+                        />
+                      </div>
+                    </>
                   )}
                 </div>
-                <div className="meta">
-                  {t.conf} · rating {Math.round(t.rating)}
-                </div>
               </div>
-              <div className="pctwrap">
-                {t.eliminated ? (
-                  <div className="pct out">OUT</div>
-                ) : (
-                  <>
-                    <div className="pct">{t.pct.toFixed(1)}%</div>
-                    <div className="barback">
-                      <div
-                        className="barfill"
-                        style={{
-                          width: `${((t.pct / max) * 100).toFixed(1)}%`,
-                        }}
-                      />
-                    </div>
-                  </>
-                )}
-              </div>
-            </div>
-          </Fragment>
-        ))}
+            </Fragment>
+          );
+        })}
       </div>
 
       <Popup
@@ -102,16 +139,43 @@ export function RaceBoard({
   );
 }
 
+const BANNER: Partial<Record<BoardStatus, { text: string; tone: string }>> = {
+  champion: { text: 'Champions — winners of the World Cup', tone: 'gold' },
+  runnerUp: { text: 'Runner-up — lost the final', tone: 'silver' },
+  thirdPlace: { text: 'Third place', tone: 'bronze' },
+  bronzeContender: {
+    text: 'Still in — plays the third-place match',
+    tone: 'bronze',
+  },
+  eliminated: { text: 'Eliminated — out of the tournament', tone: '' },
+};
+
+function titleChance(team: BoardTeam): string {
+  switch (team.status) {
+    case 'champion':
+      return 'Champions';
+    case 'runnerUp':
+      return 'Runner-up';
+    case 'thirdPlace':
+      return 'Third place';
+    case 'bronzeContender':
+      return '—';
+    case 'eliminated':
+      return 'OUT';
+    default:
+      return `${team.pct.toFixed(1)}%`;
+  }
+}
+
 function TeamCard({ team, detail }: { team: BoardTeam; detail: TeamDetail }) {
+  const banner = BANNER[team.status];
   return (
     <>
-      {team.eliminated && (
-        <div className="pop-out">Eliminated — out of the tournament</div>
-      )}
+      {banner && <div className={`pop-out ${banner.tone}`}>{banner.text}</div>}
       <div className="pop-stats">
         <div className="pop-stat">
           <span className="k">Title chance</span>
-          <span className="v">{team.eliminated ? 'OUT' : `${team.pct.toFixed(1)}%`}</span>
+          <span className="v">{titleChance(team)}</span>
         </div>
         <div className="pop-stat">
           <span className="k">Rank</span>
