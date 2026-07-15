@@ -809,10 +809,6 @@ footer {
   color: var(--accent-2);
   background: rgba(19, 224, 196, 0.14);
 }
-.tag-status.bronze {
-  color: #d79a5e;
-  background: rgba(205, 138, 74, 0.16);
-}
 .pct.champ {
   font-family: 'IBM Plex Mono';
   font-size: 13px;

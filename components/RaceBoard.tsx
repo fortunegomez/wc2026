@@ -78,9 +78,6 @@ export function RaceBoard({
                     {st === 'finalist' && (
                       <span className="tag-status finalist">Finalist</span>
                     )}
-                    {st === 'bronzeContender' && (
-                      <span className="tag-status bronze">Bronze</span>
-                    )}
                     {!podiumWin && t.delta > 0 && (
                       <span className="delta up">▲{t.delta}</span>
                     )}
